@@ -31,7 +31,7 @@
     "@vitejs/plugin-vue": "^5.2.4",
     "@vue/test-utils": "^2.4.6",
     "autoprefixer": "^10.4.21",
-    "bumpp": "^9.2.0",
+    "bumpp": "^9.11.1",
     "eslint": "^9.38.0",
     "jsdom": "^19.0.0",
     "tailwindcss": "^4.1.15",
