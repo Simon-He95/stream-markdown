@@ -10,7 +10,8 @@
     "lint:fix": "pnpm run lint --fix",
     "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest",
+    "bump": "bumpp packages/stream-markdown/package.json --commit --push --tag && pnpm --filter stream-markdown publish --access public --no-git-checks"
   },
   "dependencies": {
     "@egoist/tailwindcss-icons": "^1.9.0",
@@ -29,6 +30,7 @@
     "@types/node": "^22.18.12",
     "@vitejs/plugin-vue": "^5.2.4",
     "@vue/test-utils": "^2.4.6",
+    "bumpp": "^9.2.0",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.38.0",
     "jsdom": "^19.0.0",

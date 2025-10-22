@@ -1,45 +1,7 @@
 import type { Highlighter, SpecialTheme, ThemeInput } from 'shiki'
+import { bundledLanguagesInfo } from 'shiki'
 
-export const defaultLanguages = [
-  'jsx',
-  'tsx',
-  'vue',
-  'csharp',
-  'python',
-  'java',
-  'c',
-  'cpp',
-  'rust',
-  'go',
-  'powershell',
-  'sql',
-  'json',
-  'html',
-  'javascript',
-  'typescript',
-  'css',
-  'markdown',
-  'xml',
-  'yaml',
-  'toml',
-  'dockerfile',
-  'kotlin',
-  'objective-c',
-  'objective-cpp',
-  'php',
-  'ruby',
-  'scala',
-  'svelte',
-  'swift',
-  'erlang',
-  'angular-html',
-  'angular-ts',
-  'dart',
-  'lua',
-  'mermaid',
-  'cmake',
-  'nginx',
-]
+export const defaultLanguages = bundledLanguagesInfo.map(info => info.id)
 export const defaultThemes = ['vitesse-dark', 'vitesse-light']
 let highlighter: Highlighter | null = null
 let highlighterPromise: Promise<Highlighter> | null = null
