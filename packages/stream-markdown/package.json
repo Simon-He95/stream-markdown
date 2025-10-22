@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "clean": "rimraf dist"
+    "prepublishOnly": "pnpm run build"
   },
   "peerDependencies": {
     "shiki": ">=3.13.0"
