@@ -1,0 +1,18 @@
+@import "tailwindcss";
+@plugin '@egoist/tailwindcss-icons';
+
+
+.custom {
+  font-weight: 100;
+  padding: --spacing(10);
+  background-color: var(--color-red-100);
+
+  @variant hover {
+    background-color: var(--color-yellow-100);
+  }
+}
+
+.custom1 {
+  font-weight: 100;
+  @apply p-10 bg-red-100 hover:bg-yellow-100;
+}

@@ -1,0 +1,31 @@
+{
+  "name": "stream-markdown",
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Streaming code/markdown highlighter utilities (Shiki-based)",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "clean": "rimraf dist"
+  },
+  "peerDependencies": {
+    "shiki": ">=3.13.0"
+  },
+  "devDependencies": {
+    "tsdown": "^0.15.9",
+    "typescript": "^5.9.3"
+  }
+}

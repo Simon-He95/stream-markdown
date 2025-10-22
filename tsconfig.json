@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "incremental": false,
+    "target": "es2016",
+    "lib": ["DOM", "ESNext"],
+    "baseUrl": ".",
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "paths": {
+      "~/*": ["src/*"],
+      "stream-markdown": ["packages/stream-markdown/src/index.ts"],
+      "stream-markdown/*": ["packages/stream-markdown/src/*"]
+    },
+    "resolveJsonModule": true,
+    "types": ["node", "vite/client", "vite-plugin-pages/client"],
+    "strict": true,
+    "strictNullChecks": true,
+    "noUnusedLocals": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "exclude": ["vite.config.ts", "dist", "node_modules", "src/samples/content-json.ts"]
+}

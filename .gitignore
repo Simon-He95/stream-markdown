@@ -1,0 +1,17 @@
+.DS_Store
+.vite-ssg-dist
+.vite-ssg-temp
+*.local
+dist
+dist-ssr
+node_modules
+.idea/
+*.log
+idea/ 
+.cache 
+logs 
+&-debug.log 
+*-error.log
+.eslintcache
+tmp
+

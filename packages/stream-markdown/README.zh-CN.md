@@ -1,0 +1,67 @@
+# stream-markdown（中文）
+
+基于 Shiki 的流式语法高亮与 Markdown 渲染工具集，支持按 token 自绘与增量更新，适合“逐字符/逐块”流式输出场景。
+
+[English](./README.md) · [NPM](https://www.npmjs.com/package/stream-markdown)
+
+## 安装
+
+```sh
+pnpm add stream-markdown shiki
+```
+
+## API 概览
+
+- `registerHighlight(options?)`：确保共享的 Shiki 高亮器已就绪；可按需加载 `langs` 与 `themes`。
+- `renderCodeWithTokens(highlighter, code, opts)`：将 tokens 渲染为 `<pre><code>` HTML（每行 `.line`）。
+- `updateCodeTokensIncremental(container, highlighter, code, opts)`：基于 tokens 的增量更新；若发现早前行出现分歧会回退到全量渲染。
+- `createTokenIncrementalUpdater(container, highlighter, opts)`：工厂返回 `{ update, reset, dispose }`，用于高性能流式渲染。
+- `createShikiStreamRenderer(container, { lang, theme, themes? })`：高阶门面；提供 `updateCode(code, lang?)` 与 `setTheme(theme)`，内部处理高亮器注册与增量更新器生命周期。`themes` 用于预注册所有主题。
+
+## 快速开始（推荐）
+
+```ts
+import { createShikiStreamRenderer, registerHighlight } from 'stream-markdown'
+
+// 可选：预先加载语言与主题
+await registerHighlight({ langs: ['typescript'], themes: ['vitesse-dark', 'vitesse-light'] })
+
+const container = document.getElementById('out')!
+const renderer = createShikiStreamRenderer(container, {
+  lang: 'typescript',
+  theme: 'vitesse-dark',
+  themes: ['vitesse-dark', 'vitesse-light'],
+})
+
+let code = ''
+for (const ch of 'const a = 1\nconst b = 2\n') {
+  code += ch
+  await renderer.updateCode(code)
+}
+
+await renderer.setTheme('vitesse-light')
+```
+
+## 直接使用底层增量更新器
+
+```ts
+import { createHighlighter } from 'shiki'
+import { createTokenIncrementalUpdater } from 'stream-markdown'
+
+const highlighter = await createHighlighter({ langs: ['ts'], themes: ['vitesse-dark'] })
+const container = document.getElementById('code')!
+const updater = createTokenIncrementalUpdater(container, highlighter, { lang: 'ts', theme: 'vitesse-dark' })
+
+updater.update('let x = 1')
+updater.update('let x = 12')
+```
+
+## 提示
+
+- 预注册主题：将全部候选主题传入 `themes`，或先 `registerHighlight({ themes: [...] })`，可以避免首次切换时的延迟或丢主题。
+- CRLF 归一化：内部会处理 CRLF，使 DOM 的 `textContent` 与源文本完全一致。
+- 结构约定：每一行对应 `.line`，空行也会有 `.line`，便于行号/选择/复制操作。
+
+## 许可
+
+MIT

@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2020",
+    "rootDir": "src",
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "resolveJsonModule": true,
+    "allowJs": false,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": false,
+    "noEmit": false,
+    "outDir": "dist",
+    "verbatimModuleSyntax": true
+  },
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "dist",
+    "**/*.test.ts"
+  ]
+}
