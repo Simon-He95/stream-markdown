@@ -32,8 +32,18 @@ updater.update('const a = 12')
 
 It incrementally updates the last changed line and appends new lines; if earlier lines diverge (e.g. multi-line tokens), it safely falls back to a full re-render.
 
-<p align="center">
-  <a href="https://cdn.jsdelivr.net/gh/Simon-He95/sponsor/sponsors_circle.svg">
-    <img src="https://cdn.jsdelivr.net/gh/Simon-He95/sponsor/sponsors_circle.svg"/>
-  </a>
-</p>
+## Thanks
+
+This project is built with the help of these awesome libraries:
+
+- [shiki](https://github.com/shikijs/shiki) — Syntax highlighter powered by TextMate grammars and VS Code themes
+
+Thanks to the authors and contributors of these projects!
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Simon-He95/stream-markdown&type=Date)](https://www.star-history.com/#Simon-He95/stream-markdown&Date)
+
+## License
+
+[MIT](./LICENSE) © [Simon He](https://github.com/Simon-He95)

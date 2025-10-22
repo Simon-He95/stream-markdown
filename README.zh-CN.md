@@ -83,6 +83,10 @@ updater.update('const a = 12')
 - CRLF 归一化：为保证 DOM 与源文本一致，渲染前会做 CRLF 处理。
 - 结构约定：每一行都是一个 `.line` 容器；相邻行之间使用换行文本节点拼接，便于 `textContent` 直接对齐源文本。
 
-## 许可
+## Star History
 
-MIT ©
+[![Star History Chart](https://api.star-history.com/svg?repos=Simon-He95/stream-markdown&type=Date)](https://www.star-history.com/#Simon-He95/stream-markdown&Date)
+
+## License
+
+[MIT](./LICENSE) © [Simon He](https://github.com/Simon-He95)
