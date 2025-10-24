@@ -1,7 +1,7 @@
 {
   "name": "stream-markdown",
   "type": "module",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Streaming code/markdown highlighter utilities (Shiki-based)",
   "license": "MIT",
   "sideEffects": false,
@@ -26,10 +26,8 @@
     "shiki": ">=3.13.0"
   },
   "devDependencies": {
+    "bumpp": "^9.11.1",
     "tsdown": "^0.15.9",
     "typescript": "^5.9.3"
-  },
-  "dependencies": {
-    "bumpp": "^9.11.1"
   }
 }

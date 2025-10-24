@@ -4,6 +4,8 @@ import { createTokenIncrementalUpdater } from './incremental-tokens.js'
 export interface ShikiStreamRendererOptions {
   // initial language
   lang: string
+  // all languages that might be used later; pre-register to enable seamless switching
+  langs: string[]
   // initial theme
   theme?: string
   // all themes that might be used later; pre-register to enable seamless switching
@@ -21,8 +23,8 @@ export function createShikiStreamRenderer(
   let highlighter: any | null = null
   let updater: ReturnType<typeof createTokenIncrementalUpdater> | null = null
 
-  const ensureHighlighter = async (lang: string) => {
-    highlighter = await registerHighlight({ langs: [lang], themes: options.themes as any })
+  const ensureHighlighter = async () => {
+    highlighter = await registerHighlight({ langs: options.langs, themes: options.themes as any })
   }
 
   const reinitUpdater = () => {
@@ -40,7 +42,7 @@ export function createShikiStreamRenderer(
 
     if (!highlighter || langChanged) {
       currentLang = nextLang
-      await ensureHighlighter(currentLang)
+      await ensureHighlighter()
       reinitUpdater()
     }
     else if (!updater) {
@@ -55,7 +57,7 @@ export function createShikiStreamRenderer(
       currentTheme = theme
       // Make sure the target theme is loaded on the highlighter
       if (!highlighter)
-        await ensureHighlighter(currentLang)
+        await ensureHighlighter()
       else
         highlighter.loadTheme(theme)
       reinitUpdater()
