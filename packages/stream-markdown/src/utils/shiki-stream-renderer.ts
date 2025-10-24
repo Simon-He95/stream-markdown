@@ -3,9 +3,9 @@ import { createTokenIncrementalUpdater } from './incremental-tokens.js'
 
 export interface ShikiStreamRendererOptions {
   // initial language
-  lang: string
+  lang?: string
   // all languages that might be used later; pre-register to enable seamless switching
-  langs: string[]
+  langs?: string[]
   // initial theme
   theme?: string
   // all themes that might be used later; pre-register to enable seamless switching
