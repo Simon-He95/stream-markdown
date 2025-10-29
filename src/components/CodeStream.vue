@@ -45,7 +45,8 @@ onMounted(async () => {
     const charsPerFrame = Math.max(1, Math.round(charsPerSecond / 60))
 
     const tick = async () => {
-      if (!renderer) return
+      if (!renderer)
+        return
       if (i >= props.source.length) {
         stopTimer()
         return

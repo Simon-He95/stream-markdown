@@ -62,6 +62,18 @@ updater.update('let x = 12')
 - CRLF 归一化：内部会处理 CRLF，使 DOM 的 `textContent` 与源文本完全一致。
 - 结构约定：每一行对应 `.line`，空行也会有 `.line`，便于行号/选择/复制操作。
 
+## 渲染调度器与恢复助手
+
+当需要恢复大量 code block 或同时调度大量高亮更新时，库提供一个调度器与恢复助手来避免主线程被一次性占满：
+
+- `setTimeBudget(ms)` / `getTimeBudget()` — 调整共享调度器每帧用于处理渲染任务的时间（默认 8ms）。
+- `pause()` / `resume()` — 暂停或恢复调度器（暂停时任务仍保留在队列中）。
+- `drain()` — 立即同步运行所有队列任务（会绕过每帧预算，请谨慎使用）。
+- `getQueueLength()` — 获取当前队列长度，便于调试和观察。
+- `restoreWithVisibilityPriority(items, opts)` — 恢复辅助函数，优先渲染可见项，后台项目分批延迟执行；常用参数包括 `batchSize`、`staggerMs`、`drainVisible`。
+
+示例使用见：`USAGE_RENDER_SCHEDULER.zh-CN.md`。你也可以在 demo 页面实时调整 `timeBudget` 以观察效果。
+
 ## 许可
 
 MIT

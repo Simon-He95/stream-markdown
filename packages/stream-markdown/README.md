@@ -47,3 +47,33 @@ await renderer.setTheme('vitesse-light')
 ## Notes
 - CRLF is normalized so DOM textContent matches the source.
 - Theme and language modules are loaded on demand; pass `themes` to pre-register all candidates and avoid a first-use delay.
+
+## Rendering scheduler and restore helper
+
+When restoring many code blocks or otherwise scheduling large numbers of
+render updates, the library provides a small scheduler and a restore helper
+to avoid freezing the main thread:
+
+- `setTimeBudget(ms)` / `getTimeBudget()` — tune how many ms per frame the
+  shared scheduler will spend running render jobs (default 8ms).
+- `pause()` / `resume()` — temporarily pause the scheduler while you perform
+  critical setup work.
+- `drain()` — run all queued jobs synchronously (use sparingly; may block the
+  main thread).
+- `getQueueLength()` — inspect pending jobs.
+- `restoreWithVisibilityPriority(items, opts)` — helper to schedule a batch of
+  restores where items in the viewport are scheduled with high priority and
+  offscreen items are staggered in small batches. Options include `batchSize`,
+  `staggerMs`, and `drainVisible` to optionally force visible items to finish
+  synchronously.
+
+Example:
+
+```ts
+import { restoreWithVisibilityPriority, setTimeBudget } from 'stream-markdown'
+
+setTimeBudget(6)
+
+const items = blocks.map(b => ({ el: b.container, render: () => renderer.updateCode(b.code) }))
+restoreWithVisibilityPriority(items, { batchSize: 8, staggerMs: 40 })
+```

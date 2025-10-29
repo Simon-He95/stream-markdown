@@ -1,5 +1,7 @@
 import { registerHighlight } from './highlight.js'
 import { createTokenIncrementalUpdater } from './incremental-tokens.js'
+import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
+import { observeElement } from './shared-intersection-observer.js'
 
 export interface ShikiStreamRendererOptions {
   // initial language
@@ -14,6 +16,9 @@ export interface ShikiStreamRendererOptions {
   // whether to coalesce updateCode into requestAnimationFrame at renderer layer
   // default: true
   scheduleInRaf?: boolean
+  // optional per-renderer suggestion for scheduler time budget (ms). If set,
+  // this will call setTimeBudget() which affects the shared scheduler.
+  timeBudget?: number
 }
 
 export function createShikiStreamRenderer(
@@ -31,6 +36,8 @@ export function createShikiStreamRenderer(
   let scheduled = false
   let rafId: number | null = null
   let disposed = false
+  let unregisterObserver: (() => void) | null = null
+  let isVisible = false
 
   const cancelFrame = () => {
     if (rafId != null) {
@@ -41,6 +48,19 @@ export function createShikiStreamRenderer(
 
   const ensureHighlighter = async () => {
     highlighter = await registerHighlight({ langs: options.langs, themes: options.themes as any })
+  }
+
+  // Use a shared IntersectionObserver helper when available to track visibility
+  // without creating many observers. We register loosely (best-effort).
+  if (typeof window !== 'undefined' && container) {
+    unregisterObserver = observeElement(container, (v) => {
+      isVisible = v
+    })
+  }
+
+  // If a per-renderer timeBudget is provided, set the shared scheduler budget.
+  if (typeof options.timeBudget === 'number' && options.timeBudget >= 0) {
+    setTimeBudget(options.timeBudget)
   }
 
   const reinitUpdater = () => {
@@ -63,14 +83,23 @@ export function createShikiStreamRenderer(
       updater.update(currentCode)
       return
     }
+    // Use shared scheduler to avoid multiple renderers all running heavy
+    // updates in the same frame. We schedule a small job that runs updater.update.
+    if (scheduled)
+      return
     scheduled = true
-    rafId = requestAnimationFrame(() => {
+
+    // Prefer visible containers to reduce perceived jank: if the container is
+    // currently visible in the viewport (tracked by IntersectionObserver),
+    // schedule with high priority so it runs earlier than offscreen renderers.
+    const priority = isVisible ? 'high' : 'normal'
+    scheduleRenderJob(() => {
       scheduled = false
-      rafId = null
       if (!updater)
         return
       updater.update(currentCode)
-    })
+    }, { priority })
+    rafId = null
   }
 
   const updateCode = async (code: string, lang?: string) => {
@@ -109,6 +138,10 @@ export function createShikiStreamRenderer(
   const dispose = () => {
     updater?.dispose()
     updater = null
+    if (unregisterObserver) {
+      unregisterObserver()
+      unregisterObserver = null
+    }
     disposed = true
     cancelFrame()
   }
