@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Shiki Render Benchmark — innerHTML vs DOM</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; padding: 20px; }
+    label { display:inline-block; width:160px }
+    .controls { margin: 8px 0 16px }
+    #containers { display:block; margin-top: 12px; max-height: 50vh; overflow: auto; border: 1px solid #ddd; padding: 8px }
+    .code-block { background: #f7f7f7; margin: 4px 0; padding: 4px; font-family: monospace; white-space: pre; }
+    .results { margin-top: 12px }
+    button { margin-right: 8px }
+    .metrics { font-weight: 600 }
+  </style>
+</head>
+<body>
+  <h1>Shiki-render microbenchmark</h1>
+  <p>Compare innerHTML vs DOM API rendering cost by simulating many code blocks and many token spans per line.</p>
+
+  <div class="controls">
+    <div><label>Containers</label><input id="inputContainers" type="number" value="50" min="1" /></div>
+    <div><label>Lines per container</label><input id="inputLines" type="number" value="20" min="1" /></div>
+    <div><label>Tokens per line</label><input id="inputTokens" type="number" value="6" min="1" /></div>
+    <div><label>Token content length</label><input id="inputTokenLen" type="number" value="6" min="1" /></div>
+    <div style="margin-top:8px">
+      <button id="btnSetup">Create containers</button>
+      <button id="btnRunInner">Run innerHTML</button>
+      <button id="btnRunDOM">Run DOM API</button>
+      <button id="btnClear">Clear containers</button>
+    </div>
+  </div>
+
+  <div class="results">
+    <div>Long Tasks observed: <span id="longCount" class="metrics">0</span></div>
+    <div>Run duration: <span id="runDur" class="metrics">-</span> ms</div>
+    <div>Notes: open DevTools -> Performance to get detailed traces.</div>
+  </div>
+
+  <div id="containers"></div>
+
+  <script>
+    // Simple token generator
+    function randomColor(i) {
+      const colors = ['#b729d9','#d14','#07a','#009688','#8e44ad','#d35400','#2c3e50']
+      return colors[i % colors.length]
+    }
+
+    function makeTokens(tokensPerLine, tokenLen) {
+      const tokens = []
+      for (let i = 0; i < tokensPerLine; i++) {
+        tokens.push({ content: 'x'.repeat(tokenLen), color: randomColor(i) })
+      }
+      return tokens
+    }
+
+    const containersEl = document.getElementById('containers')
+    const inputContainers = document.getElementById('inputContainers')
+    const inputLines = document.getElementById('inputLines')
+    const inputTokens = document.getElementById('inputTokens')
+    const inputTokenLen = document.getElementById('inputTokenLen')
+    const btnSetup = document.getElementById('btnSetup')
+    const btnRunInner = document.getElementById('btnRunInner')
+    const btnRunDOM = document.getElementById('btnRunDOM')
+    const btnClear = document.getElementById('btnClear')
+    const longCountEl = document.getElementById('longCount')
+    const runDurEl = document.getElementById('runDur')
+
+    let blocks = []
+
+    function setupContainers() {
+      containersEl.innerHTML = ''
+      blocks = []
+      const n = Number(inputContainers.value)
+      for (let i = 0; i < n; i++) {
+        const div = document.createElement('div')
+        div.className = 'code-block'
+        // create inner code element to mimic real structure
+        const code = document.createElement('code')
+        div.appendChild(code)
+        containersEl.appendChild(div)
+        blocks.push(code)
+      }
+    }
+
+    btnSetup.addEventListener('click', setupContainers)
+    btnClear.addEventListener('click', () => { containersEl.innerHTML = ''; blocks = []; longCountEl.textContent = '0'; runDurEl.textContent = '-'; })
+
+    // PerformanceObserver for long tasks
+    let longObserver = null
+    function startLongObserver() {
+      longCountEl.textContent = '0'
+      if (window.PerformanceObserver && PerformanceObserver.supportedEntryTypes && PerformanceObserver.supportedEntryTypes.indexOf('longtask') >= 0) {
+        let longCount = 0
+        longObserver = new PerformanceObserver((list) => {
+          for (const e of list.getEntries()) longCount++
+          longCountEl.textContent = String(longCount)
+        })
+        try { longObserver.observe({type: 'longtask', buffered: true}) } catch (_) {}
+      } else {
+        longCountEl.textContent = 'n/a'
+      }
+    }
+    function stopLongObserver() { try { longObserver && longObserver.disconnect() } catch(_){} }
+
+    // innerHTML strategy
+    function runInnerHTML() {
+      if (!blocks.length) return alert('Create containers first')
+      startLongObserver()
+      const lines = Number(inputLines.value)
+      const tokens = Number(inputTokens.value)
+      const tokenLen = Number(inputTokenLen.value)
+      const allTokens = []
+      for (let l = 0; l < lines; l++) allTokens.push(makeTokens(tokens, tokenLen))
+
+      const t0 = performance.now()
+      for (let i = 0; i < blocks.length; i++) {
+        const codeEl = blocks[i]
+        // build a large innerHTML
+        const html = allTokens.map(line => line.map(t => `<span style="color: ${t.color}">${t.content}</span>`).join('')).join('\n')
+        codeEl.innerHTML = html
+      }
+      const t1 = performance.now()
+      runDurEl.textContent = String(Math.round(t1 - t0))
+      // let long observer collect buffered entries for a small time
+      setTimeout(stopLongObserver, 200)
+    }
+
+    // DOM API strategy
+    function runDOM() {
+      if (!blocks.length) return alert('Create containers first')
+      startLongObserver()
+      const lines = Number(inputLines.value)
+      const tokens = Number(inputTokens.value)
+      const tokenLen = Number(inputTokenLen.value)
+      const allTokens = []
+      for (let l = 0; l < lines; l++) allTokens.push(makeTokens(tokens, tokenLen))
+
+      const t0 = performance.now()
+      for (let i = 0; i < blocks.length; i++) {
+        const codeEl = blocks[i]
+        // clear existing
+        while (codeEl.firstChild) codeEl.removeChild(codeEl.firstChild)
+        // build via fragment
+        const frag = document.createDocumentFragment()
+        for (let li = 0; li < allTokens.length; li++) {
+          const lineSpan = document.createElement('span')
+          for (let tk of allTokens[li]) {
+            const s = document.createElement('span')
+            s.style.color = tk.color
+            s.textContent = tk.content
+            lineSpan.appendChild(s)
+          }
+          frag.appendChild(lineSpan)
+          if (li < allTokens.length - 1) frag.appendChild(document.createTextNode('\n'))
+        }
+        codeEl.appendChild(frag)
+      }
+      const t1 = performance.now()
+      runDurEl.textContent = String(Math.round(t1 - t0))
+      setTimeout(stopLongObserver, 200)
+    }
+
+    btnRunInner.addEventListener('click', runInnerHTML)
+    btnRunDOM.addEventListener('click', runDOM)
+
+    // auto-setup
+    setupContainers()
+  </script>
+</body>
+</html>

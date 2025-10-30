@@ -51,6 +51,52 @@ function lineInnerHtml(tokens: ThemedToken[], showLineNumbers: boolean, lineNumb
   return `${ln}${tokensHtml}`
 }
 
+/**
+ * Create a DOM <span> element representing a line from tokens.
+ * Builds children via createElement/textContent and merges adjacent tokens
+ * with identical inline style strings to reduce node count.
+ */
+function createLineElement(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber: number | undefined, lineClass: string): HTMLSpanElement {
+  const span = document.createElement('span')
+  span.className = lineClass
+
+  if (showLineNumbers && typeof lineNumber === 'number') {
+    const ln = document.createElement('span')
+    ln.className = 'line-number'
+    ln.dataset.line = String(lineNumber)
+    span.appendChild(ln)
+  }
+
+  // Merge adjacent tokens with identical style string to reduce DOM nodes
+  let i = 0
+  while (i < tokens.length) {
+    const t = tokens[i]
+    const color = t.color ? `color: ${t.color};` : ''
+    const style = `${color}${fontStyleToCss(t.fontStyle)}`
+    let content = t.content
+    i++
+
+    while (i < tokens.length) {
+      const t2 = tokens[i]
+      const color2 = t2.color ? `color: ${t2.color};` : ''
+      const style2 = `${color2}${fontStyleToCss(t2.fontStyle)}`
+      if (style2 !== style)
+        break
+      content += t2.content
+      i++
+    }
+
+    const tspan = document.createElement('span')
+    if (style)
+      tspan.setAttribute('style', style)
+    // Use textContent to avoid HTML parsing and to preserve escaped content
+    tspan.textContent = content
+    span.appendChild(tspan)
+  }
+
+  return span
+}
+
 export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' | 'codeClass' | 'lineClass'> {
   preClass?: string
   codeClass?: string
@@ -112,9 +158,7 @@ export function updateCodeTokensIncremental(
       for (let j = oldLen; j < newLen; j++) {
         // Insert a newline separator before each appended line to match Shiki's codeToHtml
         frag.appendChild(document.createTextNode('\n'))
-        const span = document.createElement('span')
-        span.className = lineClass
-        span.innerHTML = lineInnerHtml(tokenLines[j], showLineNumbers, showLineNumbers ? ln : undefined)
+        const span = createLineElement(tokenLines[j], showLineNumbers, showLineNumbers ? ln : undefined, lineClass)
         frag.appendChild(span)
         ln++
       }
@@ -128,8 +172,11 @@ export function updateCodeTokensIncremental(
 
   // Divergence at or after last existing line -> update that line and append others
   if (divergeAt >= oldLen - 1) {
-    const newInner = lineInnerHtml(tokenLines[divergeAt], showLineNumbers, showLineNumbers ? (startingLineNumber + divergeAt) : undefined)
-    oldLines[divergeAt].innerHTML = newInner
+    const newLineEl = createLineElement(tokenLines[divergeAt], showLineNumbers, showLineNumbers ? (startingLineNumber + divergeAt) : undefined, lineClass)
+    // Replace children of the existing line element with the newly built nodes
+    oldLines[divergeAt].innerHTML = ''
+    while (newLineEl.firstChild)
+      oldLines[divergeAt].appendChild(newLineEl.firstChild)
 
     if (newLen > oldLen) {
       const frag = document.createDocumentFragment()
@@ -137,9 +184,7 @@ export function updateCodeTokensIncremental(
       for (let j = oldLen; j < newLen; j++) {
         // Maintain newline separators between .line spans to match codeToHtml
         frag.appendChild(document.createTextNode('\n'))
-        const span = document.createElement('span')
-        span.className = lineClass
-        span.innerHTML = lineInnerHtml(tokenLines[j], showLineNumbers, showLineNumbers ? ln : undefined)
+        const span = createLineElement(tokenLines[j], showLineNumbers, showLineNumbers ? ln : undefined, lineClass)
         frag.appendChild(span)
         ln++
       }
@@ -203,6 +248,8 @@ interface ScheduledTask {
   highlighter: Highlighter
   code: string
   opts: TokenIncrementalOptions
+  // estimated DOM nodes this task will create (approx)
+  estNodes?: number
 }
 
 class TokenUpdateScheduler {
@@ -237,6 +284,21 @@ class TokenUpdateScheduler {
     }
 
     const task: ScheduledTask = { id: this.nextId++, container, highlighter, code, opts }
+    // Try to estimate DOM nodes from tokenization so we can budget work by nodes
+    try {
+      const tokensFor = tokensApi(highlighter)
+      const tokenLines = tokensFor(code, opts.lang, opts.theme)
+      // estimate nodes: one line span per line + one span per token
+      let nodes = 0
+      for (const line of tokenLines) {
+        nodes += 1 // line span
+        nodes += line.length // token spans
+      }
+      task.estNodes = nodes
+    }
+    catch {
+      task.estNodes = undefined
+    }
     this.queue.push(task)
     this.byContainer.set(container, task)
     if (this.io)
@@ -258,9 +320,19 @@ class TokenUpdateScheduler {
 
   private process(deadline: any) {
     this.handle = null
+    // Process visible tasks first. Use an adaptive limit per idle callback to
+    // avoid creating a long main-thread task when many containers are queued.
+    // The allowed tasks scale with deadline.timeRemaining() to be responsive on
+    // busy frames. We clamp between 1 and 8 tasks per tick.
+    const timeRem = typeof deadline?.timeRemaining === 'function' ? deadline.timeRemaining() : 50
+    // Budget nodes per tick based on time remaining. Heuristic: ~6 nodes/ms.
+    const allowedNodes = Math.min(2000, Math.max(100, Math.floor(timeRem * 6)))
+    let nodesProcessed = 0
 
-    // Process visible tasks first
     while (this.queue.length) {
+      // stop if we've exhausted node budget
+      if (nodesProcessed >= allowedNodes)
+        break
       // pick visible task if any
       let idx = this.queue.findIndex(t => this.visible.get(t.container) === true)
       if (idx === -1)
@@ -269,9 +341,22 @@ class TokenUpdateScheduler {
       const task = this.queue.splice(idx, 1)[0]
       this.byContainer.delete(task.container)
 
+      // If this task has an estimated node cost and it would exceed the
+      // remaining budget, push it back and stop processing to avoid long tasks.
+      if (typeof task.estNodes === 'number' && (nodesProcessed + task.estNodes) > allowedNodes) {
+        // re-queue at the end
+        this.queue.push(task)
+        this.byContainer.set(task.container, task)
+        break
+      }
+
       try {
         const res = updateCodeTokensIncremental(task.container, task.highlighter, task.code, task.opts)
         task.opts.onResult?.(res)
+        if (typeof task.estNodes === 'number')
+          nodesProcessed += task.estNodes
+        else
+          nodesProcessed += 50 // fallback conservative increment
       }
       catch {
         // On unexpected error, fall back to full replace and notify

@@ -13,29 +13,29 @@ export async function registerHighlight(options: {
   if (highlighter) {
     return highlighter
   }
+  // If a creation is already in progress, wait for it. Otherwise, create a
+  // single promise immediately (wrapping the dynamic import + creation) so
+  // concurrent callers don't each import and create their own highlighter.
+  if (!highlighterPromise) {
+    highlighterPromise = (async () => {
+      const { createHighlighter } = await import('shiki')
+      if (!options.langs || options.langs.length === 0)
+        options.langs = defaultLanguages
+      if (!options.themes || options.themes.length === 0)
+        options.themes = defaultThemes as any
 
-  if (highlighterPromise) {
-    await highlighterPromise
-    // After initial creation, attempt to load any additional themes/langs
-    return registerHighlight(options)
-  }
-
-  const { createHighlighter } = await import('shiki')
-  if (!options.langs || options.langs.length === 0)
-    options.langs = defaultLanguages
-  if (!options.themes || options.themes.length === 0)
-    options.themes = defaultThemes as any
-
-  highlighterPromise = createHighlighter({ themes: options.themes as any, langs: options.langs })
-    .then((h) => {
+      const h = await createHighlighter({ themes: options.themes as any, langs: options.langs })
       highlighter = h
       return h
-    })
-    .finally(() => {
+    })().finally(() => {
+      // Clear the promise reference when done so future calls can create a
+      // new highlighter if `disposeHighlighter` was used.
       highlighterPromise = null
     })
+  }
 
-  return highlighterPromise
+  await highlighterPromise
+  return highlighter!
 }
 
 export function disposeHighlighter() {
