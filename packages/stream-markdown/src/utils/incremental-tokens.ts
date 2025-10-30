@@ -188,3 +188,170 @@ export function createTokenIncrementalUpdater(
     },
   }
 }
+
+// --- Scheduler: deferred, prioritized token updates -------------------------
+// This lightweight scheduler defers token updates to idle time (requestIdleCallback)
+// and prioritizes visible containers (via IntersectionObserver). It deduplicates
+// updates per container: the latest scheduled update for the same container wins.
+// NOTE: scheduled updates are asynchronous; the `update` returned from
+// `createScheduledTokenIncrementalUpdater` returns 'noop' synchronously and the
+// final UpdateResult is delivered via `opts.onResult` when the task runs.
+
+interface ScheduledTask {
+  id: number
+  container: HTMLElement
+  highlighter: Highlighter
+  code: string
+  opts: TokenIncrementalOptions
+}
+
+class TokenUpdateScheduler {
+  private queue: ScheduledTask[] = []
+  private byContainer = new WeakMap<HTMLElement, ScheduledTask>()
+  private visible = new WeakMap<HTMLElement, boolean>()
+  private io: IntersectionObserver | null = null
+  private handle: any = null
+  private nextId = 1
+
+  constructor() {
+    try {
+      this.io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          this.visible.set(e.target as HTMLElement, e.isIntersecting)
+        }
+      }, { root: null, threshold: 0 })
+    }
+    catch {
+      this.io = null
+    }
+  }
+
+  schedule(container: HTMLElement, highlighter: Highlighter, code: string, opts: TokenIncrementalOptions) {
+    // Deduplicate: if a task already exists for this container, replace its payload
+    const prev = this.byContainer.get(container)
+    if (prev) {
+      prev.code = code
+      prev.highlighter = highlighter
+      prev.opts = opts
+      return prev.id
+    }
+
+    const task: ScheduledTask = { id: this.nextId++, container, highlighter, code, opts }
+    this.queue.push(task)
+    this.byContainer.set(container, task)
+    if (this.io)
+      this.io.observe(container)
+
+    this.ensureProcessing()
+    return task.id
+  }
+
+  private ensureProcessing() {
+    if (this.handle != null)
+      return
+
+    const ric = (window as any).requestIdleCallback || function (cb: any) {
+      return setTimeout(() => cb({ timeRemaining: () => 50, didTimeout: true }), 50)
+    }
+    this.handle = ric((deadline: any) => this.process(deadline))
+  }
+
+  private process(deadline: any) {
+    this.handle = null
+
+    // Process visible tasks first
+    while (this.queue.length) {
+      // pick visible task if any
+      let idx = this.queue.findIndex(t => this.visible.get(t.container) === true)
+      if (idx === -1)
+        idx = 0
+
+      const task = this.queue.splice(idx, 1)[0]
+      this.byContainer.delete(task.container)
+
+      try {
+        const res = updateCodeTokensIncremental(task.container, task.highlighter, task.code, task.opts)
+        task.opts.onResult?.(res)
+      }
+      catch {
+        // On unexpected error, fall back to full replace and notify
+        try {
+          task.container.innerHTML = renderCodeWithTokens(task.highlighter, task.code, {
+            lang: task.opts.lang,
+            theme: task.opts.theme,
+            preClass: task.opts.preClass,
+            codeClass: task.opts.codeClass,
+            lineClass: task.opts.lineClass,
+            showLineNumbers: task.opts.showLineNumbers,
+            startingLineNumber: task.opts.startingLineNumber,
+          })
+          task.opts.onResult?.('full')
+        }
+        catch {
+          task.opts.onResult?.('noop')
+        }
+      }
+
+      // stop processing if time is low to keep UI responsive
+      if (typeof deadline?.timeRemaining === 'function' && deadline.timeRemaining() < 6) {
+        break
+      }
+    }
+
+    // If queue still has items, schedule another idle callback
+    if (this.queue.length) {
+      this.ensureProcessing()
+    }
+  }
+
+  cancelFor(container: HTMLElement) {
+    const prev = this.byContainer.get(container)
+    if (!prev)
+      return
+    this.byContainer.delete(container)
+    const idx = this.queue.findIndex(t => t.id === prev.id)
+    if (idx !== -1)
+      this.queue.splice(idx, 1)
+    if (this.io)
+      this.io.unobserve(container)
+    this.visible.delete(container)
+  }
+}
+
+const globalTokenUpdateScheduler = new TokenUpdateScheduler()
+
+export function createScheduledTokenIncrementalUpdater(
+  container: HTMLElement | null | undefined,
+  highlighter: Highlighter,
+  opts: TokenIncrementalOptions,
+): TokenIncrementalUpdater {
+  let alive = true
+  let observed = false
+
+  return {
+    update: (code: string) => {
+      if (!alive)
+        return 'noop'
+      if (!container)
+        return 'noop'
+
+      // Schedule the update; result will be delivered via opts.onResult when executed
+      globalTokenUpdateScheduler.schedule(container, highlighter, code, opts)
+      observed = true
+      // Synchronous return is 'noop' since actual rendering will occur later
+      return 'noop'
+    },
+    reset: () => {
+      if (!alive || !container)
+        return
+      globalTokenUpdateScheduler.cancelFor(container)
+      container.innerHTML = ''
+    },
+    dispose: () => {
+      alive = false
+      if (observed && container)
+        globalTokenUpdateScheduler.cancelFor(container)
+      // leave container as-is; caller may remove
+    },
+  }
+}

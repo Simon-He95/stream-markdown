@@ -16,6 +16,29 @@ pnpm add stream-markdown shiki
 - `renderCodeWithTokens(highlighter, code, opts)`：将 tokens 渲染为 `<pre><code>` HTML（每行 `.line`）。
 - `updateCodeTokensIncremental(container, highlighter, code, opts)`：基于 tokens 的增量更新；若发现早前行出现分歧会回退到全量渲染。
 - `createTokenIncrementalUpdater(container, highlighter, opts)`：工厂返回 `{ update, reset, dispose }`，用于高性能流式渲染。
+- `createScheduledTokenIncrementalUpdater(container, highlighter, opts)`：功能类似于 `createTokenIncrementalUpdater`，但会把 DOM / token 更新延迟到空闲时间执行，并优先渲染可见容器。注意 `update(code)` 为异步路径——同步返回 'noop'，最终结果会通过 `opts.onResult` 回调通知。
+
+示例（通过 onResult 观察最终渲染结果）：
+
+```ts
+import { createHighlighter } from 'shiki'
+import { createScheduledTokenIncrementalUpdater } from 'stream-markdown'
+
+const highlighter = await createHighlighter({ themes: ['vitesse-dark'], langs: ['typescript'] })
+const container = document.getElementById('code')!
+
+const updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
+  lang: 'typescript',
+  theme: 'vitesse-dark',
+  onResult: result => console.log('scheduled render finished:', result),
+})
+
+// 注意：scheduled updater 的 update() 同步返回 'noop'；请通过 onResult 获取最终状态
+updater.update('const a = 1')
+updater.update('const a = 12')
+```
+
+提示：如果调用方需要同步的 UpdateResult（例如测试或依赖即时 DOM 更改的代码），请继续使用 `createTokenIncrementalUpdater`。
 - `createShikiStreamRenderer(container, { lang, theme, themes? })`：高阶门面；提供 `updateCode(code, lang?)` 与 `setTheme(theme)`，内部处理高亮器注册与增量更新器生命周期。`themes` 用于预注册所有主题。
 
 ## 快速开始（推荐）

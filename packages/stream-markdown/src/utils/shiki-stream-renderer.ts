@@ -1,5 +1,6 @@
+import type { createTokenIncrementalUpdater } from './incremental-tokens.js'
 import { registerHighlight } from './highlight.js'
-import { createTokenIncrementalUpdater } from './incremental-tokens.js'
+import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
 import { observeElement } from './shared-intersection-observer.js'
 
@@ -65,7 +66,9 @@ export function createShikiStreamRenderer(
 
   const reinitUpdater = () => {
     updater?.dispose()
-    updater = createTokenIncrementalUpdater(container, highlighter, {
+    // prefer scheduled (deferred) updater to avoid blocking when many renderers
+    // update at once. Falls back to immediate updater if needed elsewhere.
+    updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
       lang: currentLang ?? 'plaintext',
       theme: currentTheme,
     })

@@ -18,6 +18,29 @@ pnpm add stream-markdown shiki
 - renderCodeWithTokens(highlighter, code, opts): Render <pre><code> HTML with .line spans from tokens.
 - updateCodeTokensIncremental(container, highlighter, code, opts): Incrementally update DOM with tokens; falls back to full render on divergence.
 - createTokenIncrementalUpdater(container, highlighter, opts): Factory returning { update, reset, dispose } optimized for streaming.
+- createScheduledTokenIncrementalUpdater(container, highlighter, opts): Like `createTokenIncrementalUpdater` but defers DOM/token updates to idle time and prioritizes visible containers. `update(code)` is asynchronous (returns synchronously with 'noop'); final result is reported via `opts.onResult` when the scheduled task runs.
+
+Example (observe final result via onResult):
+
+```ts
+import { createHighlighter } from 'shiki'
+import { createScheduledTokenIncrementalUpdater } from 'stream-markdown'
+
+const highlighter = await createHighlighter({ themes: ['vitesse-dark'], langs: ['typescript'] })
+const container = document.getElementById('code')!
+
+const updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
+  lang: 'typescript',
+  theme: 'vitesse-dark',
+  onResult: result => console.log('scheduled render finished:', result),
+})
+
+// Synchronous return from update() is 'noop' for scheduled updater; rely on onResult
+updater.update('const a = 1')
+updater.update('const a = 12')
+```
+
+Note: use the immediate `createTokenIncrementalUpdater` where a synchronous UpdateResult is required (tests or callers that depend on immediate DOM changes).
 - createShikiStreamRenderer(container, { lang, theme, themes? }): Facade exposing updateCode(code, lang?) and setTheme(theme), handling reinit/dispose internally. Optional `themes` pre-registers all themes you plan to switch between.
 
 ## Quick start

@@ -30,6 +30,8 @@ updater.update('const a = 1')
 updater.update('const a = 12')
 ```
 
+Note: For non-blocking behavior when many code blocks update concurrently, use `createScheduledTokenIncrementalUpdater` which defers DOM/token updates to idle time and prioritizes visible containers. The high-level `createShikiStreamRenderer` also uses the scheduled updater by default to avoid blocking the main thread.
+
 It incrementally updates the last changed line and appends new lines; if earlier lines diverge (e.g. multi-line tokens), it safely falls back to a full re-render.
 
 ## Thanks

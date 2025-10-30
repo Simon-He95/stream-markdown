@@ -1,7 +1,7 @@
 {
   "name": "stream-markdown",
   "type": "module",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Streaming code/markdown highlighter utilities (Shiki-based)",
   "license": "MIT",
   "sideEffects": false,
