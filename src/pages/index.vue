@@ -4,7 +4,7 @@ import { createShikiStreamRenderer, getQueueLength, getTimeBudget, restoreWithVi
 import { onMounted, onUnmounted, ref } from 'vue'
 import { isDark } from '~/composables/dark'
 import CodeStream from '../components/CodeStream.vue'
-import { markdownContent, phpContent, typescriptContent } from './markdown'
+import { markdownContent, phpContent, vueContent } from './markdown'
 
 // Build theme options from Shiki's bundled theme list
 const themes = bundledThemesInfo.map(t => ({ id: t.id, label: t.displayName ?? t.id }))
@@ -62,7 +62,7 @@ async function startRestoreDemo() {
     activeRenderers.push(renderer)
 
     // create render function that sets code (simulate restored snapshot)
-    const code = typescriptContent
+    const code = vueContent
     items.push({ el, render: () => {
       renderer.updateCode(code)
     } })
@@ -95,7 +95,7 @@ function stopRestoreDemo() {
     </select>
   </div>
 
-  <CodeStream label="TypeScript" lang="typescript" :source="typescriptContent" :interval-ms="20" :theme="selectedTheme" :themes="allThemeIds" />
+  <CodeStream label="Vue" lang="vue" :source="vueContent" :interval-ms="20" :theme="selectedTheme" :themes="allThemeIds" />
   <section class="mt-6">
     <CodeStream label="Markdown" lang="markdown" :source="markdownContent" :interval-ms="25" :theme="selectedTheme" :themes="allThemeIds" />
   </section>

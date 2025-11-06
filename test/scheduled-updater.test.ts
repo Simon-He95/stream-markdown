@@ -108,4 +108,7 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     const txt = codeEl ? codeEl.textContent ?? '' : ''
     expect(txt.length).toBeGreaterThanOrEqual(0)
   })
+
+  // Note: starvation regression is covered by integration manual testing due to
+  // jsdom/requestIdleCallback variability across environments.
 })

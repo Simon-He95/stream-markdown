@@ -284,20 +284,15 @@ class TokenUpdateScheduler {
     }
 
     const task: ScheduledTask = { id: this.nextId++, container, highlighter, code, opts }
-    // Try to estimate DOM nodes from tokenization so we can budget work by nodes
-    try {
-      const tokensFor = tokensApi(highlighter)
-      const tokenLines = tokensFor(code, opts.lang, opts.theme)
-      // estimate nodes: one line span per line + one span per token
-      let nodes = 0
-      for (const line of tokenLines) {
-        nodes += 1 // line span
-        nodes += line.length // token spans
-      }
-      task.estNodes = nodes
-    }
-    catch {
-      task.estNodes = undefined
+    // Cheap heuristic for node cost to avoid double tokenization here:
+    // - base on line count and code length (tokens roughly scale with length)
+    // This is only used to decide whether to defer a large task to next tick.
+    {
+      const norm = code.replace(/\r\n/g, '\n')
+      const lineCount = 1 + (norm.match(/\n/g)?.length ?? 0)
+      // assume ~1 token span per ~6 chars on average
+      const estTokenSpans = Math.ceil(norm.length / 6)
+      task.estNodes = Math.min(8000, lineCount + estTokenSpans)
     }
     this.queue.push(task)
     this.byContainer.set(container, task)
@@ -343,11 +338,19 @@ class TokenUpdateScheduler {
 
       // If this task has an estimated node cost and it would exceed the
       // remaining budget, push it back and stop processing to avoid long tasks.
+      // However, if this is the first task this tick (nodesProcessed === 0)
+      // and it alone exceeds the budget, run it anyway to avoid starvation
+      // for very large updates that can never "fit" within the heuristic.
       if (typeof task.estNodes === 'number' && (nodesProcessed + task.estNodes) > allowedNodes) {
-        // re-queue at the end
-        this.queue.push(task)
-        this.byContainer.set(task.container, task)
-        break
+        if (nodesProcessed === 0) {
+          // Fall through to process this oversized task once, ensuring progress.
+        }
+        else {
+          // re-queue at the end and process in a later tick
+          this.queue.push(task)
+          this.byContainer.set(task.container, task)
+          break
+        }
       }
 
       try {
