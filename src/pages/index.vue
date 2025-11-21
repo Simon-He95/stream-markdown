@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { bundledThemesInfo } from 'shiki/themes'
-import { createShikiStreamRenderer, getQueueLength, getTimeBudget, restoreWithVisibilityPriority, setTimeBudget } from 'stream-markdown'
+import { createShikiStreamRenderer, getQueueLength, getTimeBudget, registerHighlight, restoreWithVisibilityPriority, setTimeBudget } from 'stream-markdown'
 import { onMounted, onUnmounted, ref } from 'vue'
 import { isDark } from '~/composables/dark'
 import CodeStream from '../components/CodeStream.vue'
@@ -20,6 +20,7 @@ let cancelRestore: (() => void) | null = null
 const schedulerQueueLen = ref(0)
 const schedulerTimeBudget = ref(getTimeBudget())
 let metricsInterval: number | undefined
+registerHighlight()
 
 onUnmounted(() => {
   if (cancelRestore)
