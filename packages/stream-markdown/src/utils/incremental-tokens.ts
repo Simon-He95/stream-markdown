@@ -101,6 +101,13 @@ export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' 
   preClass?: string
   codeClass?: string
   lineClass?: string
+  /**
+   * Optional precomputed token lines. When provided, the highlighter will NOT
+   * be invoked and these tokens will be used directly (after padding to match
+   * the code's line count). Useful for callers that cache grammar state (e.g.,
+   * shiki-stream) and want to avoid re-tokenizing identical prefixes.
+   */
+  tokenLines?: ThemedToken[][]
   onResult?: (result: UpdateResult) => void
 }
 
@@ -113,8 +120,20 @@ export function updateCodeTokensIncremental(
   if (!container)
     return 'noop'
 
-  const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber = 1 } = opts
-  const tokensFor = tokensApi(highlighter)
+  const {
+    lang,
+    theme,
+    preClass = 'shiki',
+    codeClass = '',
+    lineClass = 'line',
+    showLineNumbers = false,
+    startingLineNumber = 1,
+    tokenLines: providedTokenLines,
+  } = opts
+
+  // Use provided tokens if present (e.g., from shiki-stream) to avoid
+  // re-tokenizing stable prefixes; otherwise, call into the highlighter.
+  const tokensFor = providedTokenLines ? null : tokensApi(highlighter)
 
   // Ensure initial structure
   const codeEl = container.querySelector('code') as HTMLElement | null
@@ -125,7 +144,10 @@ export function updateCodeTokensIncremental(
   }
 
   const oldLines = codeEl.querySelectorAll<HTMLElement>(`.${lineClass}`)
-  let tokenLines = tokensFor(code, lang, theme)
+  let tokenLines = providedTokenLines
+    // clone per line so we can pad without mutating caller-owned arrays
+    ? providedTokenLines.map(line => line.slice())
+    : tokensFor!(code, lang, theme)
   // Normalize to preserve trailing empty lines (e.g., code ending with \n) and handle CRLF
   {
     const expected = code.replace(/\r\n/g, '\n').split('\n').length
@@ -201,7 +223,7 @@ export function updateCodeTokensIncremental(
 }
 
 export interface TokenIncrementalUpdater {
-  update: (code: string) => UpdateResult
+  update: (code: string, tokenLines?: ThemedToken[][]) => UpdateResult
   reset: () => void
   dispose: () => void
 }
@@ -215,12 +237,13 @@ export function createTokenIncrementalUpdater(
   let target: HTMLElement | null | undefined = container
 
   return {
-    update: (code: string) => {
+    update: (code: string, tokenLines?: ThemedToken[][]) => {
       if (!alive)
         return 'noop'
       if (!target)
         return 'noop'
-      return updateCodeTokensIncremental(target, highlighter, code, opts)
+      const nextOpts = tokenLines ? { ...opts, tokenLines } : opts
+      return updateCodeTokensIncremental(target, highlighter, code, nextOpts)
     },
     reset: () => {
       if (!alive || !target)
@@ -248,6 +271,7 @@ interface ScheduledTask {
   highlighter: Highlighter
   code: string
   opts: TokenIncrementalOptions
+  tokenLines?: ThemedToken[][]
   // estimated DOM nodes this task will create (approx)
   estNodes?: number
 }
@@ -273,17 +297,18 @@ class TokenUpdateScheduler {
     }
   }
 
-  schedule(container: HTMLElement, highlighter: Highlighter, code: string, opts: TokenIncrementalOptions) {
+  schedule(container: HTMLElement, highlighter: Highlighter, code: string, opts: TokenIncrementalOptions, tokenLines?: ThemedToken[][]) {
     // Deduplicate: if a task already exists for this container, replace its payload
     const prev = this.byContainer.get(container)
     if (prev) {
       prev.code = code
       prev.highlighter = highlighter
       prev.opts = opts
+      prev.tokenLines = tokenLines
       return prev.id
     }
 
-    const task: ScheduledTask = { id: this.nextId++, container, highlighter, code, opts }
+    const task: ScheduledTask = { id: this.nextId++, container, highlighter, code, opts, tokenLines }
     // Cheap heuristic for node cost to avoid double tokenization here:
     // - base on line count and code length (tokens roughly scale with length)
     // This is only used to decide whether to defer a large task to next tick.
@@ -354,7 +379,12 @@ class TokenUpdateScheduler {
       }
 
       try {
-        const res = updateCodeTokensIncremental(task.container, task.highlighter, task.code, task.opts)
+        const res = updateCodeTokensIncremental(
+          task.container,
+          task.highlighter,
+          task.code,
+          task.tokenLines ? { ...task.opts, tokenLines: task.tokenLines } : task.opts,
+        )
         task.opts.onResult?.(res)
         if (typeof task.estNodes === 'number')
           nodesProcessed += task.estNodes
@@ -417,14 +447,14 @@ export function createScheduledTokenIncrementalUpdater(
   let observed = false
 
   return {
-    update: (code: string) => {
+    update: (code: string, tokenLines?: ThemedToken[][]) => {
       if (!alive)
         return 'noop'
       if (!container)
         return 'noop'
 
       // Schedule the update; result will be delivered via opts.onResult when executed
-      globalTokenUpdateScheduler.schedule(container, highlighter, code, opts)
+      globalTokenUpdateScheduler.schedule(container, highlighter, code, opts, tokenLines)
       observed = true
       // Synchronous return is 'noop' since actual rendering will occur later
       return 'noop'
