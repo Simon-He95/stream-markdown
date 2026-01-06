@@ -39,6 +39,9 @@ export function createShikiStreamRenderer(
   let disposed = false
   let unregisterObserver: (() => void) | null = null
   let isVisible = false
+  // Serialize updateCode/setTheme to avoid races between theme/language loads
+  // and tokenization work (e.g. theme load promise not finished but render starts).
+  let opChain: Promise<unknown> = Promise.resolve()
 
   const cancelFrame = () => {
     if (rafId != null) {
@@ -48,7 +51,31 @@ export function createShikiStreamRenderer(
   }
 
   const ensureHighlighter = async () => {
+    if (disposed)
+      return
     highlighter = await registerHighlight({ langs: options.langs, themes: options.themes as any })
+  }
+
+  const ensureThemeLoaded = async (theme: string) => {
+    if (!theme || disposed)
+      return
+    if (!highlighter)
+      await ensureHighlighter()
+    if (disposed || !highlighter)
+      return
+    const anyHl = highlighter as any
+    if (typeof anyHl.loadTheme === 'function') {
+      // Always await: shiki.loadTheme is async and tokenization may throw if
+      // the theme is referenced before it's registered.
+      await anyHl.loadTheme(theme)
+    }
+  }
+
+  const enqueue = <T>(task: () => Promise<T>) => {
+    const next = opChain.then(task, task)
+    // Keep the chain alive even if callers don't handle rejection.
+    opChain = next.then(() => undefined, () => undefined)
+    return next
   }
 
   // Use a shared IntersectionObserver helper when available to track visibility
@@ -105,7 +132,9 @@ export function createShikiStreamRenderer(
     rafId = null
   }
 
-  const updateCode = async (code: string, lang?: string) => {
+  const updateCode = (code: string, lang?: string) => enqueue(async () => {
+    if (disposed)
+      return
     const nextLang = lang ?? currentLang
     const langChanged = nextLang !== currentLang
     currentCode = code
@@ -113,6 +142,7 @@ export function createShikiStreamRenderer(
     if (!highlighter || langChanged) {
       currentLang = nextLang
       await ensureHighlighter()
+      await ensureThemeLoaded(currentTheme)
       reinitUpdater()
     }
     else if (!updater) {
@@ -122,21 +152,22 @@ export function createShikiStreamRenderer(
     // Defer actual DOM/token updates to next animation frame to limit CPU
     // and batch multiple calls within the same frame.
     scheduleRender()
-  }
+  })
 
-  const setTheme = async (theme: string) => {
-    if (theme && theme !== currentTheme) {
-      currentTheme = theme
-      // Make sure the target theme is loaded on the highlighter
-      if (!highlighter)
-        await ensureHighlighter()
-      else
-        highlighter.loadTheme(theme)
-      reinitUpdater()
-      // Theme change可以触发大量工作；根据配置选择rAF或立即应用，避免双重调度
-      scheduleRender()
-    }
-  }
+  const setTheme = (theme: string) => enqueue(async () => {
+    if (disposed)
+      return
+    if (!theme || theme === currentTheme)
+      return
+    // Make sure the target theme is loaded on the highlighter before switching.
+    await ensureThemeLoaded(theme)
+    if (disposed)
+      return
+    currentTheme = theme
+    reinitUpdater()
+    // Theme change可以触发大量工作；根据配置选择rAF或立即应用，避免双重调度
+    scheduleRender()
+  })
 
   const dispose = () => {
     updater?.dispose()
