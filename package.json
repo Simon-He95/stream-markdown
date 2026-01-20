@@ -33,7 +33,7 @@
     "autoprefixer": "^10.4.22",
     "bumpp": "^9.11.1",
     "eslint": "^9.39.1",
-    "jsdom": "^19.0.0",
+    "jsdom": "^27.0.0",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
     "unplugin-auto-import": "^0.18.6",
