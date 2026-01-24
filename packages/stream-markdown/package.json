@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "bumpp": "^9.11.1",
-    "tsdown": "^0.15.12",
+    "tsdown": "^0.20.0",
     "typescript": "^5.9.3"
   }
 }
