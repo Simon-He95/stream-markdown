@@ -87,6 +87,14 @@ function stopRestoreDemo() {
 </script>
 
 <template>
+  <header class="mb-6">
+    <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight">
+      Stream Markdown
+    </h1>
+    <p class="mt-2 max-w-2xl text-sm sm:text-base opacity-80">
+      Shiki-based incremental renderer for streaming code and Markdown. Updates only changed lines for fast live syntax highlighting.
+    </p>
+  </header>
   <div class="mb-4 flex items-center gap-2">
     <label for="theme-select" class="text-sm opacity-70">Theme:</label>
     <select id="theme-select" v-model="selectedTheme" class="border rounded px-2 py-1 bg-transparent">

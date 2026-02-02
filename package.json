@@ -10,6 +10,7 @@
     "lint:fix": "pnpm run lint --fix",
     "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview",
+    "perf:run": "node scripts/perf-runner.mjs",
     "test": "vitest",
     "bump": "bumpp packages/stream-markdown/package.json --commit --push --tag && pnpm --filter stream-markdown publish --access public --no-git-checks"
   },
@@ -34,6 +35,7 @@
     "bumpp": "^9.11.1",
     "eslint": "^9.39.1",
     "jsdom": "^19.0.0",
+    "playwright": "^1.58.1",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
     "unplugin-auto-import": "^0.18.6",

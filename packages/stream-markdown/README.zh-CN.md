@@ -13,8 +13,8 @@ pnpm add stream-markdown shiki
 ## API 概览
 
 - `registerHighlight(options?)`：确保共享的 Shiki 高亮器已就绪；可按需加载 `langs` 与 `themes`。
-- `renderCodeWithTokens(highlighter, code, opts)`：将 tokens 渲染为 `<pre><code>` HTML（每行 `.line`）。
-- `updateCodeTokensIncremental(container, highlighter, code, opts)`：基于 tokens 的增量更新；若发现早前行出现分歧会回退到全量渲染。
+- `renderCodeWithTokens(highlighter, code, opts)`：将 tokens 渲染为 `<pre><code>` HTML（每行 `.line`）。`opts.tokenCache` / `opts.tokenCacheMaxEntries` 控制 token 缓存；`opts.htmlCache` / `opts.htmlCacheMaxEntries` 控制完整 HTML 缓存。
+- `updateCodeTokensIncremental(container, highlighter, code, opts)`：基于 tokens 的增量更新；若发现早前行出现分歧会回退到全量渲染。`opts.compareMode` 可选 `'signature'`（默认）或 `'innerHTML'`。`opts.tokenCache` / `opts.tokenCacheMaxEntries` 控制 token 缓存；`opts.htmlCache` / `opts.htmlCacheMaxEntries` 控制完整 HTML 缓存。
 - `createTokenIncrementalUpdater(container, highlighter, opts)`：工厂返回 `{ update, reset, dispose }`，用于高性能流式渲染。
 - `createScheduledTokenIncrementalUpdater(container, highlighter, opts)`：功能类似于 `createTokenIncrementalUpdater`，但会把 DOM / token 更新延迟到空闲时间执行，并优先渲染可见容器。注意 `update(code)` 为异步路径——同步返回 'noop'，最终结果会通过 `opts.onResult` 回调通知。
 

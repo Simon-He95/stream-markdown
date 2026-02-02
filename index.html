@@ -4,8 +4,53 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <title>Vitesse Lite</title>
-  <meta name="description" content="Opinionated Vite Starter Template">
+  <title>Stream Markdown — Streaming Code &amp; Markdown Highlighting</title>
+  <meta
+    name="description"
+    content="Shiki-based incremental renderer for streaming code and Markdown. Updates only changed lines for fast live syntax highlighting."
+  >
+  <meta name="robots" content="index,follow">
+  <meta name="author" content="Simon He">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Stream Markdown — Streaming Code &amp; Markdown Highlighting">
+  <meta
+    property="og:description"
+    content="Shiki-based incremental renderer for streaming code and Markdown. Updates only changed lines for fast live syntax highlighting."
+  >
+  <meta property="og:site_name" content="Stream Markdown">
+  <meta property="og:url" content="" id="og-url">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Stream Markdown — Streaming Code &amp; Markdown Highlighting">
+  <meta
+    name="twitter:description"
+    content="Shiki-based incremental renderer for streaming code and Markdown. Updates only changed lines for fast live syntax highlighting."
+  >
+  <link rel="canonical" href="" id="canonical">
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareSourceCode",
+      "name": "stream-markdown",
+      "description": "Shiki-based incremental renderer for streaming code and Markdown. Updates only changed lines for fast live syntax highlighting.",
+      "codeRepository": "https://github.com/Simon-He95/stream-markdown",
+      "license": "https://opensource.org/licenses/MIT",
+      "programmingLanguage": "TypeScript"
+    }
+  </script>
+  <script>
+    (function () {
+      var url = window.location.origin + window.location.pathname
+      var canonical = document.getElementById('canonical')
+      if (canonical)
+        canonical.setAttribute('href', url)
+      var ogUrl = document.getElementById('og-url')
+      if (ogUrl)
+        ogUrl.setAttribute('content', url)
+    })()
+  </script>
 </head>
 <body class="font-sans dark:text-white dark:bg-hex-121212">
   <div id="app"></div>

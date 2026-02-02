@@ -1,4 +1,6 @@
 import type { Highlighter } from 'shiki'
+import { getCachedHtml, setCachedHtml } from './html-cache.js'
+import { getTokenLines } from './token-cache.js'
 
 export interface RenderOptions {
   lang: string
@@ -8,12 +10,25 @@ export interface RenderOptions {
   lineClass?: string
   showLineNumbers?: boolean
   startingLineNumber?: number
+  tokenCache?: boolean
+  tokenCacheMaxEntries?: number
+  htmlCache?: boolean
+  htmlCacheMaxEntries?: number
 }
 
 export interface ThemedToken {
   content: string
   color?: string
   fontStyle?: number
+}
+
+function countLines(code: string): number {
+  let count = 1
+  for (let i = 0; i < code.length; i++) {
+    if (code.charCodeAt(i) === 10)
+      count++
+  }
+  return count
 }
 
 function escapeHtml(str: string): string {
@@ -36,28 +51,40 @@ function fontStyleToCss(style?: number): string {
   return parts.join(' ')
 }
 
+const STYLE_CACHE = new Map<string, string>()
+function tokenStyle(color?: string, fontStyle?: number): string {
+  const key = `${color ?? ''}|${fontStyle ?? 0}`
+  const cached = STYLE_CACHE.get(key)
+  if (cached !== undefined)
+    return cached
+  const colorCss = color ? `color: ${color};` : ''
+  const style = `${colorCss}${fontStyleToCss(fontStyle)}`
+  STYLE_CACHE.set(key, style)
+  return style
+}
+
 export function renderCodeWithTokens(
   highlighter: Highlighter,
   code: string,
   opts: RenderOptions,
 ): string {
   const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber = 1 } = opts
+  const cacheKey = `${lang}\u0001${theme}\u0001${preClass}\u0001${codeClass}\u0001${lineClass}\u0001${showLineNumbers ? 1 : 0}\u0001${startingLineNumber}\u0001${code}`
+  const cachedHtml = getCachedHtml(highlighter, cacheKey, {
+    htmlCache: opts.htmlCache,
+    htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
+  })
+  if (cachedHtml)
+    return cachedHtml
 
   let lines: ThemedToken[][]
-  const anyHl = highlighter as any
-  if (typeof anyHl.codeToThemedTokens === 'function') {
-    lines = anyHl.codeToThemedTokens(code, lang, theme)
-  }
-  else if (typeof anyHl.codeToTokens === 'function') {
-    const r = anyHl.codeToTokens(code, { lang, theme })
-    lines = r.tokens as ThemedToken[][]
-  }
-  else {
-    throw new TypeError('Highlighter does not support token APIs: codeToThemedTokens/codeToTokens')
-  }
+  lines = getTokenLines(highlighter, code, lang, theme, {
+    tokenCache: opts.tokenCache,
+    tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
+  })
 
   {
-    const expected = code.replace(/\r\n/g, '\n').split('\n').length
+    const expected = countLines(code)
     if (lines.length < expected) {
       lines = lines.concat(Array.from({ length: expected - lines.length }, () => []))
     }
@@ -75,8 +102,7 @@ export function renderCodeWithTokens(
   let lineNumber = startingLineNumber
   const lineHtml = lines.map((line) => {
     const tokensHtml = line.map((t) => {
-      const color = t.color ? `color: ${t.color};` : ''
-      const style = `${color}${fontStyleToCss(t.fontStyle)}`
+      const style = tokenStyle(t.color, t.fontStyle)
       const styleAttr = style ? ` style="${style}"` : ''
       return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
     }).join('')
@@ -87,5 +113,10 @@ export function renderCodeWithTokens(
 
   const preStyle = bg ? ` style="background-color: ${bg};"` : ''
   const codeCls = codeClass ? ` class="${codeClass}"` : ''
-  return `<pre class="${preClass}"${preStyle}><code${codeCls}>${lineHtml}</code></pre>`
+  const html = `<pre class="${preClass}"${preStyle}><code${codeCls}>${lineHtml}</code></pre>`
+  setCachedHtml(highlighter, cacheKey, html, {
+    htmlCache: opts.htmlCache,
+    htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
+  })
+  return html
 }

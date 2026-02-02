@@ -1,4 +1,5 @@
 import type { Highlighter, SpecialTheme, ThemeInput } from 'shiki'
+import { clearTokenCache } from './token-cache.js'
 
 export const defaultLanguages = [
   'jsx',
@@ -143,6 +144,8 @@ export async function registerHighlight(options: {
 }
 
 export function disposeHighlighter() {
+  if (highlighter)
+    clearTokenCache(highlighter)
   highlighter = null
   highlighterPromise = null
   pendingLangs.clear()

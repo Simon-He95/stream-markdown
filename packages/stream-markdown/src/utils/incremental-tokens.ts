@@ -1,22 +1,9 @@
 import type { Highlighter } from 'shiki'
 import type { RenderOptions, ThemedToken } from './shiki-render.js'
 import { renderCodeWithTokens } from './shiki-render.js'
+import { getTokenLines } from './token-cache.js'
 
 export type UpdateResult = 'incremental' | 'full' | 'noop'
-
-function tokensApi(highlighter: Highlighter) {
-  const anyHl = highlighter as any
-  if (typeof anyHl.codeToThemedTokens === 'function') {
-    return (code: string, lang: string, theme: string) => anyHl.codeToThemedTokens(code, lang, theme) as ThemedToken[][]
-  }
-  if (typeof anyHl.codeToTokens === 'function') {
-    return (code: string, lang: string, theme: string) => {
-      const r = anyHl.codeToTokens(code, { lang, theme })
-      return r.tokens as ThemedToken[][]
-    }
-  }
-  throw new Error('Highlighter does not support token APIs: codeToThemedTokens/codeToTokens')
-}
 
 function fontStyleToCss(style?: number): string {
   if (!style || style === 0)
@@ -31,6 +18,29 @@ function fontStyleToCss(style?: number): string {
   return parts.join(' ')
 }
 
+const STYLE_CACHE = new Map<string, string>()
+const LINE_SIGNATURES = new WeakMap<HTMLElement, string>()
+const LAST_CODE = new WeakMap<HTMLElement, string>()
+function tokenStyle(color?: string, fontStyle?: number): string {
+  const key = `${color ?? ''}|${fontStyle ?? 0}`
+  const cached = STYLE_CACHE.get(key)
+  if (cached !== undefined)
+    return cached
+  const colorCss = color ? `color: ${color};` : ''
+  const style = `${colorCss}${fontStyleToCss(fontStyle)}`
+  STYLE_CACHE.set(key, style)
+  return style
+}
+
+function countLines(code: string): number {
+  let count = 1
+  for (let i = 0; i < code.length; i++) {
+    if (code.charCodeAt(i) === 10)
+      count++
+  }
+  return count
+}
+
 function escapeHtml(str: string): string {
   return str.replace(/\r/g, '')
     .replace(/&/g, '&amp;')
@@ -40,8 +50,7 @@ function escapeHtml(str: string): string {
 
 function lineInnerHtml(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber?: number): string {
   const tokensHtml = tokens.map((t) => {
-    const color = t.color ? `color: ${t.color};` : ''
-    const style = `${color}${fontStyleToCss(t.fontStyle)}`
+    const style = tokenStyle(t.color, t.fontStyle)
     const styleAttr = style ? ` style="${style}"` : ''
     return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
   }).join('')
@@ -51,14 +60,41 @@ function lineInnerHtml(tokens: ThemedToken[], showLineNumbers: boolean, lineNumb
   return `${ln}${tokensHtml}`
 }
 
+function lineSignature(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber?: number): string {
+  let sig = showLineNumbers && typeof lineNumber === 'number'
+    ? `#${lineNumber}|`
+    : '#|'
+  let i = 0
+  while (i < tokens.length) {
+    const t = tokens[i]
+    const style = tokenStyle(t.color, t.fontStyle)
+    let content = t.content
+    i++
+
+    while (i < tokens.length) {
+      const t2 = tokens[i]
+      const style2 = tokenStyle(t2.color, t2.fontStyle)
+      if (style2 !== style)
+        break
+      content += t2.content
+      i++
+    }
+
+    sig += `${content.length}:${content}|${style};`
+  }
+  return sig
+}
+
 /**
  * Create a DOM <span> element representing a line from tokens.
  * Builds children via createElement/textContent and merges adjacent tokens
  * with identical inline style strings to reduce node count.
  */
-function createLineElement(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber: number | undefined, lineClass: string): HTMLSpanElement {
+function createLineElement(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber: number | undefined, lineClass: string, signature?: string): HTMLSpanElement {
   const span = document.createElement('span')
   span.className = lineClass
+  if (signature)
+    LINE_SIGNATURES.set(span, signature)
 
   if (showLineNumbers && typeof lineNumber === 'number') {
     const ln = document.createElement('span')
@@ -71,15 +107,13 @@ function createLineElement(tokens: ThemedToken[], showLineNumbers: boolean, line
   let i = 0
   while (i < tokens.length) {
     const t = tokens[i]
-    const color = t.color ? `color: ${t.color};` : ''
-    const style = `${color}${fontStyleToCss(t.fontStyle)}`
+    const style = tokenStyle(t.color, t.fontStyle)
     let content = t.content
     i++
 
     while (i < tokens.length) {
       const t2 = tokens[i]
-      const color2 = t2.color ? `color: ${t2.color};` : ''
-      const style2 = `${color2}${fontStyleToCss(t2.fontStyle)}`
+      const style2 = tokenStyle(t2.color, t2.fontStyle)
       if (style2 !== style)
         break
       content += t2.content
@@ -102,6 +136,23 @@ export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' 
   codeClass?: string
   lineClass?: string
   onResult?: (result: UpdateResult) => void
+  /**
+   * Compare mode for detecting the first diverged line.
+   * - 'signature' (default): compare a compact per-line signature
+   * - 'innerHTML': fallback to full innerHTML string comparison
+   */
+  compareMode?: 'signature' | 'innerHTML'
+  /**
+   * Skip tokenization when the input code is identical to the last update.
+   * Defaults to true for updater instances; direct calls are unaffected.
+   */
+  skipSameCode?: boolean
+  /**
+   * Unsafe append-only fast path. When enabled and code is a strict prefix
+   * extension of the previous update, this skips per-line divergence checks.
+   * Default false to preserve correctness for multiline-token grammars.
+   */
+  appendOnlyFastPath?: boolean
 }
 
 export function updateCodeTokensIncremental(
@@ -114,21 +165,37 @@ export function updateCodeTokensIncremental(
     return 'noop'
 
   const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber = 1 } = opts
-  const tokensFor = tokensApi(highlighter)
+  const compareMode = opts.compareMode ?? 'signature'
 
   // Ensure initial structure
   const codeEl = container.querySelector('code') as HTMLElement | null
   if (!codeEl) {
-    container.innerHTML = renderCodeWithTokens(highlighter, code, { lang, theme, preClass, codeClass, lineClass, showLineNumbers, startingLineNumber })
+    container.innerHTML = renderCodeWithTokens(highlighter, code, {
+      lang,
+      theme,
+      preClass,
+      codeClass,
+      lineClass,
+      showLineNumbers,
+      startingLineNumber,
+      tokenCache: opts.tokenCache,
+      tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
+      htmlCache: opts.htmlCache,
+      htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
+    })
     opts.onResult?.('full')
+    LAST_CODE.set(container, code)
     return 'full'
   }
 
-  const oldLines = codeEl.querySelectorAll<HTMLElement>(`.${lineClass}`)
-  let tokenLines = tokensFor(code, lang, theme)
+  const oldLines = codeEl.getElementsByClassName(lineClass) as HTMLCollectionOf<HTMLElement>
+  let tokenLines = getTokenLines(highlighter, code, lang, theme, {
+    tokenCache: opts.tokenCache,
+    tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
+  })
   // Normalize to preserve trailing empty lines (e.g., code ending with \n) and handle CRLF
   {
-    const expected = code.replace(/\r\n/g, '\n').split('\n').length
+    const expected = countLines(code)
     if (tokenLines.length < expected) {
       const pad = expected - tokenLines.length
       tokenLines = tokenLines.concat(Array.from({ length: pad }, () => []))
@@ -137,15 +204,80 @@ export function updateCodeTokensIncremental(
   const newLen = tokenLines.length
   const oldLen = oldLines.length
 
+  const prevCode = LAST_CODE.get(container)
+  const canAppendOnly = opts.appendOnlyFastPath === true
+    && typeof prevCode === 'string'
+    && prevCode.length > 0
+    && code.startsWith(prevCode)
+    && code !== prevCode
+
+  if (canAppendOnly && oldLen > 0) {
+    const prevLineCount = countLines(prevCode)
+    if (prevLineCount === oldLen) {
+      const lastIdx = oldLen - 1
+      const lineNumber = showLineNumbers ? (startingLineNumber + lastIdx) : undefined
+      const sig = compareMode === 'signature'
+        ? lineSignature(tokenLines[lastIdx], showLineNumbers, lineNumber)
+        : undefined
+      const newLineEl = createLineElement(tokenLines[lastIdx], showLineNumbers, lineNumber, lineClass, sig)
+      oldLines[lastIdx].innerHTML = ''
+      while (newLineEl.firstChild)
+        oldLines[lastIdx].appendChild(newLineEl.firstChild)
+      if (sig)
+        LINE_SIGNATURES.set(oldLines[lastIdx], sig)
+
+      if (newLen > oldLen) {
+        const frag = document.createDocumentFragment()
+        let ln = startingLineNumber + oldLen
+        for (let j = oldLen; j < newLen; j++) {
+          frag.appendChild(document.createTextNode('\n'))
+          const lineNumber = showLineNumbers ? ln : undefined
+          const sig = compareMode === 'signature'
+            ? lineSignature(tokenLines[j], showLineNumbers, lineNumber)
+            : undefined
+          const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, sig)
+          frag.appendChild(span)
+          ln++
+        }
+        codeEl.appendChild(frag)
+      }
+      opts.onResult?.('incremental')
+      LAST_CODE.set(container, code)
+      return 'incremental'
+    }
+  }
+
   // Find first differing line by comparing innerHTML
   let divergeAt = -1
   const minLen = Math.min(oldLen, newLen)
   let currentLineNumber = startingLineNumber
   for (let idx = 0; idx < minLen; idx++) {
-    const newInner = lineInnerHtml(tokenLines[idx], showLineNumbers, showLineNumbers ? currentLineNumber : undefined)
-    if (oldLines[idx].innerHTML !== newInner) {
-      divergeAt = idx
-      break
+    const lineNumber = showLineNumbers ? currentLineNumber : undefined
+    const oldLine = oldLines[idx]
+    if (compareMode === 'signature') {
+      const sig = lineSignature(tokenLines[idx], showLineNumbers, lineNumber)
+      const oldSig = LINE_SIGNATURES.get(oldLine)
+      if (oldSig) {
+        if (oldSig !== sig) {
+          divergeAt = idx
+          break
+        }
+      }
+      else {
+        const newInner = lineInnerHtml(tokenLines[idx], showLineNumbers, lineNumber)
+        if (oldLine.innerHTML !== newInner) {
+          divergeAt = idx
+          break
+        }
+        LINE_SIGNATURES.set(oldLine, sig)
+      }
+    }
+    else {
+      const newInner = lineInnerHtml(tokenLines[idx], showLineNumbers, lineNumber)
+      if (oldLine.innerHTML !== newInner) {
+        divergeAt = idx
+        break
+      }
     }
     currentLineNumber++
   }
@@ -158,25 +290,33 @@ export function updateCodeTokensIncremental(
       for (let j = oldLen; j < newLen; j++) {
         // Insert a newline separator before each appended line to match Shiki's codeToHtml
         frag.appendChild(document.createTextNode('\n'))
-        const span = createLineElement(tokenLines[j], showLineNumbers, showLineNumbers ? ln : undefined, lineClass)
+        const lineNumber = showLineNumbers ? ln : undefined
+        const sig = compareMode === 'signature' ? lineSignature(tokenLines[j], showLineNumbers, lineNumber) : undefined
+        const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, sig)
         frag.appendChild(span)
         ln++
       }
       codeEl.appendChild(frag)
       opts.onResult?.('incremental')
+      LAST_CODE.set(container, code)
       return 'incremental'
     }
     opts.onResult?.('noop')
+    LAST_CODE.set(container, code)
     return 'noop'
   }
 
   // Divergence at or after last existing line -> update that line and append others
   if (divergeAt >= oldLen - 1) {
-    const newLineEl = createLineElement(tokenLines[divergeAt], showLineNumbers, showLineNumbers ? (startingLineNumber + divergeAt) : undefined, lineClass)
+    const lineNumber = showLineNumbers ? (startingLineNumber + divergeAt) : undefined
+    const sig = compareMode === 'signature' ? lineSignature(tokenLines[divergeAt], showLineNumbers, lineNumber) : undefined
+    const newLineEl = createLineElement(tokenLines[divergeAt], showLineNumbers, lineNumber, lineClass, sig)
     // Replace children of the existing line element with the newly built nodes
     oldLines[divergeAt].innerHTML = ''
     while (newLineEl.firstChild)
       oldLines[divergeAt].appendChild(newLineEl.firstChild)
+    if (sig)
+      LINE_SIGNATURES.set(oldLines[divergeAt], sig)
 
     if (newLen > oldLen) {
       const frag = document.createDocumentFragment()
@@ -184,19 +324,35 @@ export function updateCodeTokensIncremental(
       for (let j = oldLen; j < newLen; j++) {
         // Maintain newline separators between .line spans to match codeToHtml
         frag.appendChild(document.createTextNode('\n'))
-        const span = createLineElement(tokenLines[j], showLineNumbers, showLineNumbers ? ln : undefined, lineClass)
+        const lineNumber = showLineNumbers ? ln : undefined
+        const sig = compareMode === 'signature' ? lineSignature(tokenLines[j], showLineNumbers, lineNumber) : undefined
+        const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, sig)
         frag.appendChild(span)
         ln++
       }
       codeEl.appendChild(frag)
     }
     opts.onResult?.('incremental')
+    LAST_CODE.set(container, code)
     return 'incremental'
   }
 
   // Divergence earlier -> full replace for correctness
-  container.innerHTML = renderCodeWithTokens(highlighter, code, { lang, theme, preClass, codeClass, lineClass, showLineNumbers, startingLineNumber })
+  container.innerHTML = renderCodeWithTokens(highlighter, code, {
+    lang,
+    theme,
+    preClass,
+    codeClass,
+    lineClass,
+    showLineNumbers,
+    startingLineNumber,
+    tokenCache: opts.tokenCache,
+    tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
+    htmlCache: opts.htmlCache,
+    htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
+  })
   opts.onResult?.('full')
+  LAST_CODE.set(container, code)
   return 'full'
 }
 
@@ -213,6 +369,7 @@ export function createTokenIncrementalUpdater(
 ): TokenIncrementalUpdater {
   let alive = true
   let target: HTMLElement | null | undefined = container
+  let lastCode: string | null = null
 
   return {
     update: (code: string) => {
@@ -220,16 +377,28 @@ export function createTokenIncrementalUpdater(
         return 'noop'
       if (!target)
         return 'noop'
-      return updateCodeTokensIncremental(target, highlighter, code, opts)
+      const skipSame = opts.skipSameCode !== false
+      if (skipSame && lastCode === code) {
+        const codeEl = target.querySelector('code')
+        if (codeEl && (codeEl.textContent ?? '').replace(/\r/g, '') === code.replace(/\r/g, '')) {
+          opts.onResult?.('noop')
+          return 'noop'
+        }
+      }
+      const res = updateCodeTokensIncremental(target, highlighter, code, opts)
+      lastCode = code
+      return res
     },
     reset: () => {
       if (!alive || !target)
         return
       target.innerHTML = ''
+      lastCode = null
     },
     dispose: () => {
       alive = false
       target = null
+      lastCode = null
     },
   }
 }
@@ -288,10 +457,9 @@ class TokenUpdateScheduler {
     // - base on line count and code length (tokens roughly scale with length)
     // This is only used to decide whether to defer a large task to next tick.
     {
-      const norm = code.replace(/\r\n/g, '\n')
-      const lineCount = 1 + (norm.match(/\n/g)?.length ?? 0)
+      const lineCount = countLines(code)
       // assume ~1 token span per ~6 chars on average
-      const estTokenSpans = Math.ceil(norm.length / 6)
+      const estTokenSpans = Math.ceil(code.length / 6)
       task.estNodes = Math.min(8000, lineCount + estTokenSpans)
     }
     this.queue.push(task)
@@ -372,6 +540,10 @@ class TokenUpdateScheduler {
             lineClass: task.opts.lineClass,
             showLineNumbers: task.opts.showLineNumbers,
             startingLineNumber: task.opts.startingLineNumber,
+            tokenCache: task.opts.tokenCache,
+            tokenCacheMaxEntries: task.opts.tokenCacheMaxEntries,
+            htmlCache: task.opts.htmlCache,
+            htmlCacheMaxEntries: task.opts.htmlCacheMaxEntries,
           })
           task.opts.onResult?.('full')
         }
