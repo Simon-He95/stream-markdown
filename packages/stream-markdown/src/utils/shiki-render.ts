@@ -14,6 +14,7 @@ export interface RenderOptions {
   tokenCacheMaxEntries?: number
   htmlCache?: boolean
   htmlCacheMaxEntries?: number
+  tokenLines?: ThemedToken[][]
 }
 
 export interface ThemedToken {
@@ -78,10 +79,12 @@ export function renderCodeWithTokens(
     return cachedHtml
 
   let lines: ThemedToken[][]
-  lines = getTokenLines(highlighter, code, lang, theme, {
-    tokenCache: opts.tokenCache,
-    tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
-  })
+  lines = opts.tokenLines
+    ? opts.tokenLines.map(line => line.slice())
+    : getTokenLines(highlighter, code, lang, theme, {
+        tokenCache: opts.tokenCache,
+        tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
+      })
 
   {
     const expected = countLines(code)

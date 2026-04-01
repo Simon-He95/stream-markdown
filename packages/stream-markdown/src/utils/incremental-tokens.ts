@@ -135,6 +135,13 @@ export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' 
   preClass?: string
   codeClass?: string
   lineClass?: string
+  /**
+   * Optional precomputed token lines. When provided, the highlighter will NOT
+   * be invoked and these tokens will be used directly (after padding to match
+   * the code's line count). Useful for callers that cache grammar state (e.g.,
+   * shiki-stream) and want to avoid re-tokenizing identical prefixes.
+   */
+  tokenLines?: ThemedToken[][]
   onResult?: (result: UpdateResult) => void
   /**
    * Compare mode for detecting the first diverged line.
@@ -164,7 +171,16 @@ export function updateCodeTokensIncremental(
   if (!container)
     return 'noop'
 
-  const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber = 1 } = opts
+  const {
+    lang,
+    theme,
+    preClass = 'shiki',
+    codeClass = '',
+    lineClass = 'line',
+    showLineNumbers = false,
+    startingLineNumber = 1,
+    tokenLines: providedTokenLines,
+  } = opts
   const compareMode = opts.compareMode ?? 'signature'
 
   // Ensure initial structure
@@ -182,6 +198,7 @@ export function updateCodeTokensIncremental(
       tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
       htmlCache: opts.htmlCache,
       htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
+      tokenLines: providedTokenLines,
     })
     opts.onResult?.('full')
     LAST_CODE.set(container, code)
@@ -189,10 +206,13 @@ export function updateCodeTokensIncremental(
   }
 
   const oldLines = codeEl.getElementsByClassName(lineClass) as HTMLCollectionOf<HTMLElement>
-  let tokenLines = getTokenLines(highlighter, code, lang, theme, {
-    tokenCache: opts.tokenCache,
-    tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
-  })
+  let tokenLines = providedTokenLines
+    // clone per line so we can pad without mutating caller-owned arrays
+    ? providedTokenLines.map(line => line.slice())
+    : getTokenLines(highlighter, code, lang, theme, {
+        tokenCache: opts.tokenCache,
+        tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
+      })
   // Normalize to preserve trailing empty lines (e.g., code ending with \n) and handle CRLF
   {
     const expected = countLines(code)
@@ -350,6 +370,7 @@ export function updateCodeTokensIncremental(
     tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
     htmlCache: opts.htmlCache,
     htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
+    tokenLines: providedTokenLines,
   })
   opts.onResult?.('full')
   LAST_CODE.set(container, code)
@@ -357,7 +378,7 @@ export function updateCodeTokensIncremental(
 }
 
 export interface TokenIncrementalUpdater {
-  update: (code: string) => UpdateResult
+  update: (code: string, tokenLines?: ThemedToken[][]) => UpdateResult
   reset: () => void
   dispose: () => void
 }
@@ -372,12 +393,12 @@ export function createTokenIncrementalUpdater(
   let lastCode: string | null = null
 
   return {
-    update: (code: string) => {
+    update: (code: string, tokenLines?: ThemedToken[][]) => {
       if (!alive)
         return 'noop'
       if (!target)
         return 'noop'
-      const skipSame = opts.skipSameCode !== false
+      const skipSame = tokenLines == null && opts.skipSameCode !== false
       if (skipSame && lastCode === code) {
         const codeEl = target.querySelector('code')
         if (codeEl && (codeEl.textContent ?? '').replace(/\r/g, '') === code.replace(/\r/g, '')) {
@@ -385,7 +406,8 @@ export function createTokenIncrementalUpdater(
           return 'noop'
         }
       }
-      const res = updateCodeTokensIncremental(target, highlighter, code, opts)
+      const nextOpts = tokenLines ? { ...opts, tokenLines } : opts
+      const res = updateCodeTokensIncremental(target, highlighter, code, nextOpts)
       lastCode = code
       return res
     },
@@ -417,6 +439,7 @@ interface ScheduledTask {
   highlighter: Highlighter
   code: string
   opts: TokenIncrementalOptions
+  tokenLines?: ThemedToken[][]
   // estimated DOM nodes this task will create (approx)
   estNodes?: number
 }
@@ -442,17 +465,18 @@ class TokenUpdateScheduler {
     }
   }
 
-  schedule(container: HTMLElement, highlighter: Highlighter, code: string, opts: TokenIncrementalOptions) {
+  schedule(container: HTMLElement, highlighter: Highlighter, code: string, opts: TokenIncrementalOptions, tokenLines?: ThemedToken[][]) {
     // Deduplicate: if a task already exists for this container, replace its payload
     const prev = this.byContainer.get(container)
     if (prev) {
       prev.code = code
       prev.highlighter = highlighter
       prev.opts = opts
+      prev.tokenLines = tokenLines
       return prev.id
     }
 
-    const task: ScheduledTask = { id: this.nextId++, container, highlighter, code, opts }
+    const task: ScheduledTask = { id: this.nextId++, container, highlighter, code, opts, tokenLines }
     // Cheap heuristic for node cost to avoid double tokenization here:
     // - base on line count and code length (tokens roughly scale with length)
     // This is only used to decide whether to defer a large task to next tick.
@@ -522,7 +546,12 @@ class TokenUpdateScheduler {
       }
 
       try {
-        const res = updateCodeTokensIncremental(task.container, task.highlighter, task.code, task.opts)
+        const res = updateCodeTokensIncremental(
+          task.container,
+          task.highlighter,
+          task.code,
+          task.tokenLines ? { ...task.opts, tokenLines: task.tokenLines } : task.opts,
+        )
         task.opts.onResult?.(res)
         if (typeof task.estNodes === 'number')
           nodesProcessed += task.estNodes
@@ -544,6 +573,7 @@ class TokenUpdateScheduler {
             tokenCacheMaxEntries: task.opts.tokenCacheMaxEntries,
             htmlCache: task.opts.htmlCache,
             htmlCacheMaxEntries: task.opts.htmlCacheMaxEntries,
+            tokenLines: task.tokenLines,
           })
           task.opts.onResult?.('full')
         }
@@ -589,14 +619,14 @@ export function createScheduledTokenIncrementalUpdater(
   let observed = false
 
   return {
-    update: (code: string) => {
+    update: (code: string, tokenLines?: ThemedToken[][]) => {
       if (!alive)
         return 'noop'
       if (!container)
         return 'noop'
 
       // Schedule the update; result will be delivered via opts.onResult when executed
-      globalTokenUpdateScheduler.schedule(container, highlighter, code, opts)
+      globalTokenUpdateScheduler.schedule(container, highlighter, code, opts, tokenLines)
       observed = true
       // Synchronous return is 'noop' since actual rendering will occur later
       return 'noop'

@@ -96,6 +96,9 @@ importers:
       shiki:
         specifier: '>=3.13.0'
         version: 3.13.0
+      shiki-stream:
+        specifier: ^0.1.4
+        version: 0.1.4(vue@3.5.25(typescript@5.9.3))
     devDependencies:
       bumpp:
         specifier: ^9.11.1
@@ -2734,6 +2737,20 @@ packages:
   shebang-regex@3.0.0:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
+
+  shiki-stream@0.1.4:
+    resolution: {integrity: sha512-4pz6JGSDmVTTkPJ/ueixHkFAXY4ySCc+unvCaDZV7hqq/sdJZirRxgIXSuNSKgiFlGTgRR97sdu2R8K55sPsrw==}
+    peerDependencies:
+      react: ^19.0.0
+      solid-js: ^1.9.0
+      vue: ^3.2.0
+    peerDependenciesMeta:
+      react:
+        optional: true
+      solid-js:
+        optional: true
+      vue:
+        optional: true
 
   shiki@3.13.0:
     resolution: {integrity: sha512-aZW4l8Og16CokuCLf8CF8kq+KK2yOygapU5m3+hoGw0Mdosc6fPitjM+ujYarppj5ZIKGyPDPP1vqmQhr+5/0g==}
@@ -6068,6 +6085,12 @@ snapshots:
       shebang-regex: 3.0.0
 
   shebang-regex@3.0.0: {}
+
+  shiki-stream@0.1.4(vue@3.5.25(typescript@5.9.3)):
+    dependencies:
+      '@shikijs/core': 3.19.0
+    optionalDependencies:
+      vue: 3.5.25(typescript@5.9.3)
 
   shiki@3.13.0:
     dependencies:
