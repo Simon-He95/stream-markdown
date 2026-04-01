@@ -18,6 +18,10 @@ function getCache(highlighter: Highlighter) {
   return cache
 }
 
+export function clearTokenCache(highlighter: Highlighter) {
+  perHighlighterCache.delete(highlighter)
+}
+
 export function getTokenLines(
   highlighter: Highlighter,
   code: string,
