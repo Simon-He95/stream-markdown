@@ -23,7 +23,7 @@
     "release": "bumpp --commit --push --tag && npm publish"
   },
   "peerDependencies": {
-    "shiki": ">=3.13.0"
+    "shiki": ">=3.23.0"
   },
   "devDependencies": {
     "bumpp": "^9.11.1",
