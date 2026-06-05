@@ -1,5 +1,7 @@
-import type { Highlighter, SpecialTheme, ThemeInput } from 'shiki'
+import type { BundledTheme, Highlighter, SpecialTheme, ThemeInput } from 'shiki'
 import { clearTokenCache } from './token-cache.js'
+
+type HighlightTheme = BundledTheme | SpecialTheme | ThemeInput
 
 export const defaultLanguages = [
   'jsx',
@@ -41,11 +43,11 @@ export const defaultLanguages = [
   'cmake',
   'nginx',
 ]
-export const defaultThemes = ['vitesse-dark', 'vitesse-light']
+export const defaultThemes: BundledTheme[] = ['vitesse-dark', 'vitesse-light']
 let highlighter: Highlighter | null = null
 let highlighterPromise: Promise<Highlighter> | null = null
 const pendingLangs = new Set<string>()
-let pendingThemes: Array<ThemeInput | SpecialTheme> = []
+let pendingThemes: HighlightTheme[] = []
 let applyPromise: Promise<void> = Promise.resolve()
 
 function addPendingLangs(langs: string[]) {
@@ -53,7 +55,7 @@ function addPendingLangs(langs: string[]) {
     pendingLangs.add(l)
 }
 
-function addPendingThemes(themes: Array<ThemeInput | SpecialTheme>) {
+function addPendingThemes(themes: HighlightTheme[]) {
   // Best-effort dedupe by id/name for common cases; keep unknown objects as-is.
   const existingIds = new Set<string>()
   for (const t of pendingThemes) {
@@ -105,7 +107,7 @@ async function applyPending(highlighter: Highlighter) {
 }
 
 export async function registerHighlight(options: {
-  themes?: ThemeInput[] | SpecialTheme[]
+  themes?: HighlightTheme[]
   langs?: string[]
 } = {}) {
   const langs = (!options.langs || options.langs.length === 0) ? defaultLanguages : options.langs

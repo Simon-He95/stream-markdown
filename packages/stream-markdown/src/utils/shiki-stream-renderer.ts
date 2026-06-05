@@ -20,6 +20,9 @@ export interface ShikiStreamRendererOptions {
   // optional per-renderer suggestion for scheduler time budget (ms). If set,
   // this will call setTimeBudget() which affects the shared scheduler.
   timeBudget?: number
+  // pass-through controls for the scheduled token updater
+  appendOnlyFastPath?: boolean
+  throttleMs?: number
 }
 
 export function createShikiStreamRenderer(
@@ -98,6 +101,8 @@ export function createShikiStreamRenderer(
     updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
       lang: currentLang ?? 'plaintext',
       theme: currentTheme,
+      appendOnlyFastPath: options.appendOnlyFastPath ?? true,
+      throttleMs: options.throttleMs,
     })
   }
 

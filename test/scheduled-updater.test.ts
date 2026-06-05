@@ -17,11 +17,10 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
   let origIO: any
 
   beforeEach(() => {
-    // Make requestIdleCallback synchronous for tests (safe if not present)
+    // Make requestIdleCallback deterministic for tests (safe if not present)
     origRIC = (globalThis as any).requestIdleCallback ?? undefined
-    const ricImpl = (cb: any) => {
-      cb({ timeRemaining: () => 999, didTimeout: true })
-      return 1
+    const ricImpl = (cb: IdleRequestCallback) => {
+      return window.setTimeout(() => cb({ timeRemaining: () => 999, didTimeout: true }), 0)
     }
     globalThis.requestIdleCallback = ricImpl
     // also ensure window.requestIdleCallback exists in jsdom environment
@@ -71,6 +70,7 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
       lang: 'ts',
       theme: 'vitesse-dark',
+      throttleMs: 0,
       onResult: (r: string) => results.push(r),
     })
 
@@ -92,6 +92,7 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
       lang: 'ts',
       theme: 'vitesse-dark',
+      throttleMs: 0,
       onResult: (r: string) => results.push(r),
     })
 
@@ -107,6 +108,27 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     const codeEl = container.querySelector('code')
     const txt = codeEl ? codeEl.textContent ?? '' : ''
     expect(txt.length).toBeGreaterThanOrEqual(0)
+  })
+
+  it('coalesces updates during the throttle window', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      throttleMs: 10,
+    })
+
+    updater.update('first')
+    updater.update('final')
+
+    await new Promise(r => setTimeout(r, 5))
+    expect(container.querySelector('code')).toBeNull()
+
+    await new Promise(r => setTimeout(r, 15))
+
+    expect(container.querySelector('code')?.textContent).toBe('final')
   })
 
   // Note: starvation regression is covered by integration manual testing due to

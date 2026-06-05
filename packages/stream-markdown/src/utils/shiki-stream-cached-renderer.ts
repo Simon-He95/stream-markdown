@@ -106,6 +106,8 @@ export function createShikiStreamCachedRenderer(
     updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
       lang: currentLang ?? 'plaintext',
       theme: currentTheme,
+      appendOnlyFastPath: options.appendOnlyFastPath ?? true,
+      throttleMs: options.throttleMs,
     })
   }
 
@@ -165,8 +167,7 @@ export function createShikiStreamCachedRenderer(
     if (disposed || !tokenizer || !updater)
       return
 
-    const canAppend =
-      !langChanged
+    const canAppend = !langChanged
       && options.useGrammarState !== false
       && tokenBuffer.length > 0
       && !!prevCode
@@ -206,9 +207,10 @@ export function createShikiStreamCachedRenderer(
     if (!currentCode)
       return
     await ensureTokenizer()
-    if (disposed || !tokenizer || !updater)
+    const activeTokenizer = tokenizer as ShikiStreamTokenizer | null
+    if (disposed || !activeTokenizer || !updater)
       return
-    const { stable, unstable } = await tokenizer.enqueue(currentCode)
+    const { stable, unstable } = await activeTokenizer.enqueue(currentCode)
     if (disposed)
       return
     tokenBuffer = [...stable, ...unstable]

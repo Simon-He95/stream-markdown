@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { createTokenIncrementalUpdater, updateCodeTokensIncremental } from 'stream-markdown'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { createTokenIncrementalUpdater, updateCodeTokensIncremental } from '../packages/stream-markdown/src/utils/incremental-tokens.js'
 import { streamContent as tsMarkdown } from '../src/pages/markdown.js'
 import { markdownContent } from '../src/samples/content-markdown.js'
 import { phpContent } from '../src/samples/content-php.js'
@@ -31,6 +31,26 @@ describe('updateCodeTokensIncremental', () => {
     })
     expect(result).toBe('full')
     expect(container.querySelectorAll('code .line').length).toBe(1)
+  })
+
+  it('renders token styles with classes instead of inline styles', () => {
+    const highlighter = {
+      codeToThemedTokens() {
+        return [[{ content: 'const', color: '#ff0000', fontStyle: 2 }]]
+      },
+    }
+
+    updateCodeTokensIncremental(container, highlighter as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const token = container.querySelector('code .line span') as HTMLElement
+    expect(token.getAttribute('style')).toBeNull()
+    expect(token.className).toMatch(/^smd-token-/)
+    const style = document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent
+    expect(style).toContain(`.${token.className}`)
+    expect(style).toContain('color: #ff0000;')
   })
 
   it('appends a new line incrementally', () => {

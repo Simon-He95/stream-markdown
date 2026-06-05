@@ -2,35 +2,12 @@ import type { Highlighter } from 'shiki'
 import type { RenderOptions, ThemedToken } from './shiki-render.js'
 import { renderCodeWithTokens } from './shiki-render.js'
 import { getTokenLines } from './token-cache.js'
+import { ensureTokenStyleSheet, getTokenClassName } from './token-style.js'
 
 export type UpdateResult = 'incremental' | 'full' | 'noop'
 
-function fontStyleToCss(style?: number): string {
-  if (!style || style === 0)
-    return ''
-  const parts: string[] = []
-  if (style & 1)
-    parts.push('font-style: italic;')
-  if (style & 2)
-    parts.push('font-weight: 600;')
-  if (style & 4)
-    parts.push('text-decoration: underline; text-underline-offset: 0.15em;')
-  return parts.join(' ')
-}
-
-const STYLE_CACHE = new Map<string, string>()
 const LINE_SIGNATURES = new WeakMap<HTMLElement, string>()
 const LAST_CODE = new WeakMap<HTMLElement, string>()
-function tokenStyle(color?: string, fontStyle?: number): string {
-  const key = `${color ?? ''}|${fontStyle ?? 0}`
-  const cached = STYLE_CACHE.get(key)
-  if (cached !== undefined)
-    return cached
-  const colorCss = color ? `color: ${color};` : ''
-  const style = `${colorCss}${fontStyleToCss(fontStyle)}`
-  STYLE_CACHE.set(key, style)
-  return style
-}
 
 function countLines(code: string): number {
   let count = 1
@@ -50,9 +27,9 @@ function escapeHtml(str: string): string {
 
 function lineInnerHtml(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber?: number): string {
   const tokensHtml = tokens.map((t) => {
-    const style = tokenStyle(t.color, t.fontStyle)
-    const styleAttr = style ? ` style="${style}"` : ''
-    return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
+    const className = getTokenClassName(t.color, t.fontStyle)
+    const classAttr = className ? ` class="${className}"` : ''
+    return `<span${classAttr}>${escapeHtml(t.content)}</span>`
   }).join('')
   const ln = showLineNumbers && typeof lineNumber === 'number'
     ? `<span class="line-number" data-line="${lineNumber}"></span>`
@@ -67,20 +44,20 @@ function lineSignature(tokens: ThemedToken[], showLineNumbers: boolean, lineNumb
   let i = 0
   while (i < tokens.length) {
     const t = tokens[i]
-    const style = tokenStyle(t.color, t.fontStyle)
+    const className = getTokenClassName(t.color, t.fontStyle)
     let content = t.content
     i++
 
     while (i < tokens.length) {
       const t2 = tokens[i]
-      const style2 = tokenStyle(t2.color, t2.fontStyle)
-      if (style2 !== style)
+      const className2 = getTokenClassName(t2.color, t2.fontStyle)
+      if (className2 !== className)
         break
       content += t2.content
       i++
     }
 
-    sig += `${content.length}:${content}|${style};`
+    sig += `${content.length}:${content}|${className};`
   }
   return sig
 }
@@ -107,27 +84,28 @@ function createLineElement(tokens: ThemedToken[], showLineNumbers: boolean, line
   let i = 0
   while (i < tokens.length) {
     const t = tokens[i]
-    const style = tokenStyle(t.color, t.fontStyle)
+    const className = getTokenClassName(t.color, t.fontStyle)
     let content = t.content
     i++
 
     while (i < tokens.length) {
       const t2 = tokens[i]
-      const style2 = tokenStyle(t2.color, t2.fontStyle)
-      if (style2 !== style)
+      const className2 = getTokenClassName(t2.color, t2.fontStyle)
+      if (className2 !== className)
         break
       content += t2.content
       i++
     }
 
     const tspan = document.createElement('span')
-    if (style)
-      tspan.setAttribute('style', style)
+    if (className)
+      tspan.className = className
     // Use textContent to avoid HTML parsing and to preserve escaped content
     tspan.textContent = content
     span.appendChild(tspan)
   }
 
+  ensureTokenStyleSheet()
   return span
 }
 
@@ -157,9 +135,13 @@ export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' 
   /**
    * Unsafe append-only fast path. When enabled and code is a strict prefix
    * extension of the previous update, this skips per-line divergence checks.
-   * Default false to preserve correctness for multiline-token grammars.
+   * Defaults to false for direct updates and true for scheduled streaming updates.
    */
   appendOnlyFastPath?: boolean
+  /**
+   * Coalesce scheduled updates for this many milliseconds before rendering.
+   */
+  throttleMs?: number
 }
 
 export function updateCodeTokensIncremental(
@@ -617,6 +599,38 @@ export function createScheduledTokenIncrementalUpdater(
 ): TokenIncrementalUpdater {
   let alive = true
   let observed = false
+  let pendingCode: string | null = null
+  let pendingTokenLines: ThemedToken[][] | undefined
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  const flush = () => {
+    timer = null
+    if (!alive || !container || pendingCode == null)
+      return
+
+    const code = pendingCode
+    const tokenLines = pendingTokenLines
+    pendingCode = null
+    pendingTokenLines = undefined
+
+    const updateOpts = opts.appendOnlyFastPath === undefined
+      ? { ...opts, appendOnlyFastPath: true }
+      : opts
+
+    // Schedule the update; result will be delivered via opts.onResult when executed
+    globalTokenUpdateScheduler.schedule(container, highlighter, code, updateOpts, tokenLines)
+    observed = true
+  }
+
+  const scheduleFlush = () => {
+    const throttleMs = opts.throttleMs ?? 50
+    if (throttleMs <= 0) {
+      flush()
+      return
+    }
+    if (!timer)
+      timer = setTimeout(flush, throttleMs)
+  }
 
   return {
     update: (code: string, tokenLines?: ThemedToken[][]) => {
@@ -625,20 +639,32 @@ export function createScheduledTokenIncrementalUpdater(
       if (!container)
         return 'noop'
 
-      // Schedule the update; result will be delivered via opts.onResult when executed
-      globalTokenUpdateScheduler.schedule(container, highlighter, code, opts, tokenLines)
-      observed = true
+      pendingCode = code
+      pendingTokenLines = tokenLines
+      scheduleFlush()
       // Synchronous return is 'noop' since actual rendering will occur later
       return 'noop'
     },
     reset: () => {
       if (!alive || !container)
         return
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      pendingCode = null
+      pendingTokenLines = undefined
       globalTokenUpdateScheduler.cancelFor(container)
       container.innerHTML = ''
     },
     dispose: () => {
       alive = false
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      pendingCode = null
+      pendingTokenLines = undefined
       if (observed && container)
         globalTokenUpdateScheduler.cancelFor(container)
       // leave container as-is; caller may remove
