@@ -4,7 +4,7 @@ command = "npx pnpm run build"
 
 [build.environment]
 NPM_FLAGS = "--version"
-NODE_VERSION = "2"
+NODE_VERSION = "22"
 
 [[redirects]]
 from = "/*"
