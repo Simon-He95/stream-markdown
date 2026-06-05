@@ -111,10 +111,10 @@ export async function registerHighlight(options: {
   langs?: string[]
 } = {}) {
   const langs = (!options.langs || options.langs.length === 0) ? defaultLanguages : options.langs
-  const themes = (!options.themes || options.themes.length === 0) ? (defaultThemes as any) : options.themes
+  const themes = (!options.themes || options.themes.length === 0) ? defaultThemes : options.themes
 
   addPendingLangs(langs)
-  addPendingThemes(themes as any)
+  addPendingThemes(themes)
 
   if (highlighter) {
     await applyPending(highlighter)
@@ -127,7 +127,7 @@ export async function registerHighlight(options: {
     highlighterPromise = (async () => {
       const { createHighlighter } = await import('shiki')
       const h = await createHighlighter({
-        themes: pendingThemes.length > 0 ? (pendingThemes as any) : (defaultThemes as any),
+        themes: pendingThemes.length > 0 ? pendingThemes : defaultThemes,
         langs: pendingLangs.size > 0 ? Array.from(pendingLangs) : defaultLanguages,
       })
       highlighter = h

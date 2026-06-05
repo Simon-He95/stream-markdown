@@ -80,7 +80,7 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     // Wait a tick for the requestIdleCallback to have run
     await new Promise(r => setTimeout(r, 0))
 
-    expect(results.length).toBeGreaterThanOrEqual(1)
+    expect(results).toHaveLength(1)
     expect(['full', 'incremental', 'noop']).toContain(results[0])
   })
 

@@ -548,13 +548,12 @@ class TokenUpdateScheduler {
       }
 
       try {
-        const res = updateCodeTokensIncremental(
+        updateCodeTokensIncremental(
           task.container,
           task.highlighter,
           task.code,
           task.tokenLines ? { ...task.opts, tokenLines: task.tokenLines } : task.opts,
         )
-        task.opts.onResult?.(res)
         if (typeof task.estNodes === 'number')
           nodesProcessed += task.estNodes
         else
@@ -633,9 +632,10 @@ export function createScheduledTokenIncrementalUpdater(
     pendingCode = null
     pendingTokenLines = undefined
 
-    const updateOpts = opts.appendOnlyFastPath === undefined
-      ? { ...opts, appendOnlyFastPath: true }
-      : opts
+    const updateOpts = {
+      ...opts,
+      appendOnlyFastPath: opts.appendOnlyFastPath ?? true,
+    }
 
     // Schedule the update; result will be delivered via opts.onResult when executed
     globalTokenUpdateScheduler.schedule(container, highlighter, code, updateOpts, tokenLines)

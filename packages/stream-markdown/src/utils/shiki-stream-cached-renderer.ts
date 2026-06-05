@@ -187,7 +187,7 @@ export function createShikiStreamCachedRenderer(
     else if (!canAppend)
       tokenBuffer = []
 
-    tokenBuffer.push(...stable, ...unstable)
+    tokenBuffer.push(...(stable ?? []), ...(unstable ?? []))
     scheduleRender(tokensToLines(tokenBuffer))
   })
 
@@ -213,7 +213,7 @@ export function createShikiStreamCachedRenderer(
     const { stable, unstable } = await activeTokenizer.enqueue(currentCode)
     if (disposed)
       return
-    tokenBuffer = [...stable, ...unstable]
+    tokenBuffer = [...(stable ?? []), ...(unstable ?? [])]
     scheduleRender(tokensToLines(tokenBuffer))
   })
 
