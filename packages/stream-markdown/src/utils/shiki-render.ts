@@ -1,7 +1,7 @@
 import type { Highlighter } from 'shiki'
 import { getCachedHtml, setCachedHtml } from './html-cache.js'
 import { getTokenLines } from './token-cache.js'
-import { ensureTokenStyleSheet, getTokenClassName } from './token-style.js'
+import { ensureTokenStyleSheet, getTokenStyleAttr } from './token-style.js'
 
 export interface RenderOptions {
   lang: string
@@ -83,9 +83,8 @@ export function renderCodeWithTokens(
   let lineNumber = startingLineNumber
   const lineHtml = lines.map((line) => {
     const tokensHtml = line.map((t) => {
-      const className = getTokenClassName(t.color, t.fontStyle)
-      const classAttr = className ? ` class="${className}"` : ''
-      return `<span${classAttr}>${escapeHtml(t.content)}</span>`
+      const styleAttr = getTokenStyleAttr(t.color, t.fontStyle)
+      return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
     }).join('')
 
     const ln = showLineNumbers ? `<span class="line-number" data-line="${lineNumber++}"></span>` : ''

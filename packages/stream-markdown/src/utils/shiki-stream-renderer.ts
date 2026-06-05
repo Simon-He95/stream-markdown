@@ -1,6 +1,6 @@
-import type { createTokenIncrementalUpdater } from './incremental-tokens.js'
+import type { TokenIncrementalUpdater } from './incremental-tokens.js'
 import { registerHighlight } from './highlight.js'
-import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
+import { createScheduledTokenIncrementalUpdater, createTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
 import { observeElement } from './shared-intersection-observer.js'
 
@@ -33,12 +33,12 @@ export function createShikiStreamRenderer(
   let currentLang = options.lang
   let currentTheme = options.theme ?? 'vitesse-dark'
   let highlighter: any | null = null
-  let updater: ReturnType<typeof createTokenIncrementalUpdater> | null = null
+  let updater: TokenIncrementalUpdater | null = null
   // Coalesce frequent updateCode calls into a single rAF-driven update to
   // avoid re-tokenizing on every keystream chunk.
   const useRaf = options.scheduleInRaf ?? true
   let scheduled = false
-  let rafId: number | null = null
+  let cancelScheduledRender: (() => void) | null = null
   let disposed = false
   let unregisterObserver: (() => void) | null = null
   let isVisible = false
@@ -46,11 +46,12 @@ export function createShikiStreamRenderer(
   // and tokenization work (e.g. theme load promise not finished but render starts).
   let opChain: Promise<unknown> = Promise.resolve()
 
-  const cancelFrame = () => {
-    if (rafId != null) {
-      cancelAnimationFrame(rafId)
-      rafId = null
+  const cancelPendingRender = () => {
+    if (cancelScheduledRender) {
+      cancelScheduledRender()
+      cancelScheduledRender = null
     }
+    scheduled = false
   }
 
   const ensureHighlighter = async () => {
@@ -96,9 +97,11 @@ export function createShikiStreamRenderer(
 
   const reinitUpdater = () => {
     updater?.dispose()
-    // prefer scheduled (deferred) updater to avoid blocking when many renderers
-    // update at once. Falls back to immediate updater if needed elsewhere.
-    updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
+    const createUpdater = useRaf
+      ? createScheduledTokenIncrementalUpdater
+      : createTokenIncrementalUpdater
+
+    updater = createUpdater(container, highlighter, {
       lang: currentLang ?? 'plaintext',
       theme: currentTheme,
       appendOnlyFastPath: options.appendOnlyFastPath ?? true,
@@ -108,8 +111,6 @@ export function createShikiStreamRenderer(
 
   const scheduleRender = () => {
     if (disposed)
-      return
-    if (scheduled)
       return
     if (!useRaf) {
       // Immediate apply when rAF scheduling is disabled (e.g., caller batches externally)
@@ -128,13 +129,13 @@ export function createShikiStreamRenderer(
     // currently visible in the viewport (tracked by IntersectionObserver),
     // schedule with high priority so it runs earlier than offscreen renderers.
     const priority = isVisible ? 'high' : 'normal'
-    scheduleRenderJob(() => {
+    cancelScheduledRender = scheduleRenderJob(() => {
+      cancelScheduledRender = null
       scheduled = false
-      if (!updater)
+      if (disposed || !updater)
         return
       updater.update(currentCode)
     }, { priority })
-    rafId = null
   }
 
   const updateCode = (code: string, lang?: string) => enqueue(async () => {
@@ -175,14 +176,14 @@ export function createShikiStreamRenderer(
   })
 
   const dispose = () => {
+    disposed = true
+    cancelPendingRender()
     updater?.dispose()
     updater = null
     if (unregisterObserver) {
       unregisterObserver()
       unregisterObserver = null
     }
-    disposed = true
-    cancelFrame()
   }
 
   const getState = () => ({ code: currentCode, lang: currentLang, theme: currentTheme })

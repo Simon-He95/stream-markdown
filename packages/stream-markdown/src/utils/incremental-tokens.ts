@@ -2,7 +2,7 @@ import type { Highlighter } from 'shiki'
 import type { RenderOptions, ThemedToken } from './shiki-render.js'
 import { renderCodeWithTokens } from './shiki-render.js'
 import { getTokenLines } from './token-cache.js'
-import { ensureTokenStyleSheet, getTokenClassName } from './token-style.js'
+import { ensureTokenStyleSheet, getTokenClassName, getTokenStyleAttr, getTokenStyleSignature } from './token-style.js'
 
 export type UpdateResult = 'incremental' | 'full' | 'noop'
 
@@ -27,9 +27,8 @@ function escapeHtml(str: string): string {
 
 function lineInnerHtml(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber?: number): string {
   const tokensHtml = tokens.map((t) => {
-    const className = getTokenClassName(t.color, t.fontStyle)
-    const classAttr = className ? ` class="${className}"` : ''
-    return `<span${classAttr}>${escapeHtml(t.content)}</span>`
+    const styleAttr = getTokenStyleAttr(t.color, t.fontStyle)
+    return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
   }).join('')
   const ln = showLineNumbers && typeof lineNumber === 'number'
     ? `<span class="line-number" data-line="${lineNumber}"></span>`
@@ -44,20 +43,20 @@ function lineSignature(tokens: ThemedToken[], showLineNumbers: boolean, lineNumb
   let i = 0
   while (i < tokens.length) {
     const t = tokens[i]
-    const className = getTokenClassName(t.color, t.fontStyle)
+    const style = getTokenStyleSignature(t.color, t.fontStyle)
     let content = t.content
     i++
 
     while (i < tokens.length) {
       const t2 = tokens[i]
-      const className2 = getTokenClassName(t2.color, t2.fontStyle)
-      if (className2 !== className)
+      const style2 = getTokenStyleSignature(t2.color, t2.fontStyle)
+      if (style2 !== style)
         break
       content += t2.content
       i++
     }
 
-    sig += `${content.length}:${content}|${className};`
+    sig += `${content.length}:${content}|${style};`
   }
   return sig
 }
@@ -303,6 +302,27 @@ export function updateCodeTokensIncremental(
       LAST_CODE.set(container, code)
       return 'incremental'
     }
+
+    if (newLen < oldLen) {
+      container.innerHTML = renderCodeWithTokens(highlighter, code, {
+        lang,
+        theme,
+        preClass,
+        codeClass,
+        lineClass,
+        showLineNumbers,
+        startingLineNumber,
+        tokenCache: opts.tokenCache,
+        tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
+        htmlCache: opts.htmlCache,
+        htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
+        tokenLines: providedTokenLines,
+      })
+      opts.onResult?.('full')
+      LAST_CODE.set(container, code)
+      return 'full'
+    }
+
     opts.onResult?.('noop')
     LAST_CODE.set(container, code)
     return 'noop'

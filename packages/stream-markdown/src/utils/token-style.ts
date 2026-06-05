@@ -21,6 +21,16 @@ function tokenStyle(color?: string, fontStyle?: number): string {
   return `${colorCss}${fontStyleToCss(fontStyle)}`
 }
 
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+}
+
+export function getTokenStyleSignature(color?: string, fontStyle?: number): string {
+  return tokenStyle(color, fontStyle)
+}
+
 export function getTokenClassName(color?: string, fontStyle?: number): string {
   const style = tokenStyle(color, fontStyle)
   if (!style)
@@ -35,6 +45,17 @@ export function getTokenClassName(color?: string, fontStyle?: number): string {
   TOKEN_STYLE_RULES.push(`.${className}{${style}}`)
   tokenStyleSheetDirty = true
   return className
+}
+
+export function getTokenStyleAttr(color?: string, fontStyle?: number): string {
+  const style = tokenStyle(color, fontStyle)
+  if (!style)
+    return ''
+
+  if (typeof document === 'undefined')
+    return ` style="${escapeAttr(style)}"`
+
+  return ` class="${getTokenClassName(color, fontStyle)}"`
 }
 
 export function ensureTokenStyleSheet(): void {

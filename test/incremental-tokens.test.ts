@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createTokenIncrementalUpdater, updateCodeTokensIncremental } from '../packages/stream-markdown/src/utils/incremental-tokens.js'
+import { renderCodeWithTokens } from '../packages/stream-markdown/src/utils/shiki-render.js'
 import { streamContent as tsMarkdown } from '../src/pages/markdown.js'
 import { markdownContent } from '../src/samples/content-markdown.js'
 import { phpContent } from '../src/samples/content-php.js'
@@ -15,11 +16,22 @@ const hl = {
   },
 }
 
+const coloredHl = {
+  codeToThemedTokens(code: string) {
+    return code.split('\n').map(line => [{
+      content: line,
+      color: '#ff0000',
+      fontStyle: 3,
+    }])
+  },
+}
+
 describe('updateCodeTokensIncremental', () => {
   let container: HTMLElement
 
   beforeEach(() => {
     container = document.createElement('div')
+    document.head.innerHTML = ''
     document.body.innerHTML = ''
     document.body.appendChild(container)
   })
@@ -34,13 +46,7 @@ describe('updateCodeTokensIncremental', () => {
   })
 
   it('renders token styles with classes instead of inline styles', () => {
-    const highlighter = {
-      codeToThemedTokens() {
-        return [[{ content: 'const', color: '#ff0000', fontStyle: 2 }]]
-      },
-    }
-
-    updateCodeTokensIncremental(container, highlighter as any, 'const', {
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
       lang: 'ts',
       theme: 'vitesse-dark',
     })
@@ -51,12 +57,57 @@ describe('updateCodeTokensIncremental', () => {
     const style = document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent
     expect(style).toContain(`.${token.className}`)
     expect(style).toContain('color: #ff0000;')
+    expect(style).toContain('font-style: italic;')
+    expect(style).toContain('font-weight: 600;')
+  })
+
+  it('rehydrates token style rules when cached HTML is reused', () => {
+    const opts = {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      htmlCache: true,
+    }
+
+    const html1 = renderCodeWithTokens(coloredHl as any, 'const a = 1', opts)
+
+    expect(html1).toContain('class="smd-token-')
+    expect(html1).not.toContain('style="color: #ff0000;')
+
+    let styleEl = document.head.querySelector('style[data-stream-markdown-token-styles]')
+    expect(styleEl?.textContent).toContain('color: #ff0000;')
+
+    document.head.innerHTML = ''
+
+    const html2 = renderCodeWithTokens(coloredHl as any, 'const a = 1', opts)
+
+    expect(html2).toBe(html1)
+    styleEl = document.head.querySelector('style[data-stream-markdown-token-styles]')
+    expect(styleEl?.textContent).toContain('color: #ff0000;')
   })
 
   it('appends a new line incrementally', () => {
     updateCodeTokensIncremental(container, hl as any, 'a', { lang: 'ts', theme: 'vitesse-dark' })
     const res2 = updateCodeTokensIncremental(container, hl as any, 'a\nb', { lang: 'ts', theme: 'vitesse-dark' })
     expect(res2).toBe('incremental')
+    const lines = container.querySelectorAll('code .line')
+    expect(lines.length).toBe(2)
+    expect(lines[0].textContent).toBe('a')
+    expect(lines[1].textContent).toBe('b')
+  })
+
+  it('removes stale trailing lines when code shrinks with matching prefix lines', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a\nb\nc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const res2 = updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(res2).toBe('full')
+
     const lines = container.querySelectorAll('code .line')
     expect(lines.length).toBe(2)
     expect(lines[0].textContent).toBe('a')
