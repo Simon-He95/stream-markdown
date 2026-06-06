@@ -255,6 +255,12 @@ export function updateCodeTokensIncremental(
     startingLineNumber,
   })
 
+  const finishUpdate = (result: UpdateResult): UpdateResult => {
+    setContainerRenderState(container, code, signature)
+    opts.onResult?.(result)
+    return result
+  }
+
   const renderFull = (): UpdateResult => {
     container.innerHTML = renderCodeWithTokens(highlighter, code, {
       lang,
@@ -272,9 +278,7 @@ export function updateCodeTokensIncremental(
       styleRoot,
       tokenStyleMode: 'class',
     })
-    opts.onResult?.('full')
-    setContainerRenderState(container, code, signature)
-    return 'full'
+    return finishUpdate('full')
   }
 
   // Ensure initial structure
@@ -345,9 +349,7 @@ export function updateCodeTokensIncremental(
         codeEl.appendChild(frag)
       }
       ensureTokenStyleSheet(styleRoot)
-      opts.onResult?.('incremental')
-      setContainerRenderState(container, code, signature)
-      return 'incremental'
+      return finishUpdate('incremental')
     }
   }
 
@@ -402,18 +404,14 @@ export function updateCodeTokensIncremental(
       }
       codeEl.appendChild(frag)
       ensureTokenStyleSheet(styleRoot)
-      opts.onResult?.('incremental')
-      setContainerRenderState(container, code, signature)
-      return 'incremental'
+      return finishUpdate('incremental')
     }
 
     if (newLen < oldLen)
       return renderFull()
 
     ensureTokenStyleSheet(styleRoot)
-    opts.onResult?.('noop')
-    setContainerRenderState(container, code, signature)
-    return 'noop'
+    return finishUpdate('noop')
   }
 
   // Divergence at or after last existing line -> update that line and append others
@@ -443,9 +441,7 @@ export function updateCodeTokensIncremental(
       codeEl.appendChild(frag)
     }
     ensureTokenStyleSheet(styleRoot)
-    opts.onResult?.('incremental')
-    setContainerRenderState(container, code, signature)
-    return 'incremental'
+    return finishUpdate('incremental')
   }
 
   // Divergence earlier -> full replace for correctness

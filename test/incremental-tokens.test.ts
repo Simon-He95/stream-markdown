@@ -367,6 +367,33 @@ describe('updateCodeTokensIncremental', () => {
     expect(lines[1].textContent).toBe('b')
   })
 
+  it('does not let reentrant onResult leave stale append-only state', () => {
+    let reentered = false
+    let updater!: ReturnType<typeof createTokenIncrementalUpdater>
+
+    updater = createTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      appendOnlyFastPath: true,
+      onResult: () => {
+        if (reentered)
+          return
+
+        reentered = true
+        updater.update('x\nb')
+      },
+    })
+
+    updater.update('a\nb')
+
+    expect(container.querySelector('code')?.textContent).toBe('x\nb')
+
+    updater.update('a\nbc')
+
+    expect(container.querySelector('code')?.textContent).toBe('a\nbc')
+    updater.dispose()
+  })
+
   it('removes stale trailing lines when code shrinks with matching prefix lines', () => {
     updateCodeTokensIncremental(container, hl as any, 'a\nb\nc', {
       lang: 'ts',
