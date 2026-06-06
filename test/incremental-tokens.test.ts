@@ -278,6 +278,46 @@ describe('updateCodeTokensIncremental', () => {
     expect(lines[1].textContent).toBe('b')
   })
 
+  it('does not falsely diverge in innerHTML mode after merged token DOM is created', () => {
+    const splitSameStyleHl = {
+      codeToThemedTokens(code: string) {
+        return code.split('\n').map(line => [
+          { content: line.slice(0, 1), color: '#ff0000', fontStyle: 0 },
+          { content: line.slice(1), color: '#ff0000', fontStyle: 0 },
+        ])
+      },
+    }
+
+    updateCodeTokensIncremental(container, splitSameStyleHl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      compareMode: 'innerHTML',
+    })
+
+    expect(updateCodeTokensIncremental(container, splitSameStyleHl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      compareMode: 'innerHTML',
+    })).toBe('noop')
+
+    updateCodeTokensIncremental(container, splitSameStyleHl as any, 'abc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      compareMode: 'innerHTML',
+    })
+
+    const before = container.querySelector('code .line')!.innerHTML
+
+    const res = updateCodeTokensIncremental(container, splitSameStyleHl as any, 'abc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      compareMode: 'innerHTML',
+    })
+
+    expect(res).toBe('noop')
+    expect(container.querySelector('code .line')!.innerHTML).toBe(before)
+  })
+
   it('updates last line incrementally', () => {
     updateCodeTokensIncremental(container, hl as any, 'abc', { lang: 'ts', theme: 'vitesse-dark' })
     const res2 = updateCodeTokensIncremental(container, hl as any, 'abcd', { lang: 'ts', theme: 'vitesse-dark' })

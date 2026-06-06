@@ -32,10 +32,27 @@ function escapeHtml(str: string): string {
 }
 
 function lineInnerHtml(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber?: number): string {
-  const tokensHtml = tokens.map((t) => {
+  let tokensHtml = ''
+  let i = 0
+
+  while (i < tokens.length) {
+    const t = tokens[i]
     const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, 'class')
-    return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
-  }).join('')
+    let content = t.content
+    i++
+
+    while (i < tokens.length) {
+      const t2 = tokens[i]
+      const styleAttr2 = getTokenStyleAttr(t2.color, t2.fontStyle, 'class')
+      if (styleAttr2 !== styleAttr)
+        break
+      content += t2.content
+      i++
+    }
+
+    tokensHtml += `<span${styleAttr}>${escapeHtml(content)}</span>`
+  }
+
   const ln = showLineNumbers && typeof lineNumber === 'number'
     ? `<span class="line-number" data-line="${lineNumber}"></span>`
     : ''
@@ -620,7 +637,8 @@ class TokenUpdateScheduler {
         }
       }
 
-      this.stopObserving(task.container)
+      if (!this.byContainer.has(task.container))
+        this.stopObserving(task.container)
 
       // stop processing if time is low to keep UI responsive
       if (typeof deadline?.timeRemaining === 'function' && deadline.timeRemaining() < 6) {
@@ -654,16 +672,16 @@ export function createScheduledTokenIncrementalUpdater(
   opts: TokenIncrementalOptions,
 ): TokenIncrementalUpdater {
   let alive = true
-  let hasScheduledTask = false
+  let scheduledTaskId: number | null = null
   let pendingCode: string | null = null
   let pendingTokenLines: ThemedToken[][] | undefined
   let timer: ReturnType<typeof setTimeout> | null = null
 
   const cancelScheduledTask = () => {
-    if (!container || !hasScheduledTask)
+    if (!container || scheduledTaskId == null)
       return
     globalTokenUpdateScheduler.cancelFor(container)
-    hasScheduledTask = false
+    scheduledTaskId = null
   }
 
   const flush = () => {
@@ -676,14 +694,24 @@ export function createScheduledTokenIncrementalUpdater(
     pendingCode = null
     pendingTokenLines = undefined
 
-    const updateOpts = {
+    let taskId = -1
+    let completedSynchronously = false
+
+    const updateOpts: TokenIncrementalOptions = {
       ...opts,
       appendOnlyFastPath: opts.appendOnlyFastPath ?? false,
+      onResult: (result) => {
+        completedSynchronously = true
+        if (scheduledTaskId === taskId)
+          scheduledTaskId = null
+        opts.onResult?.(result)
+      },
     }
 
     // Schedule the update; result will be delivered via opts.onResult when executed
-    globalTokenUpdateScheduler.schedule(container, highlighter, code, updateOpts, tokenLines)
-    hasScheduledTask = true
+    taskId = globalTokenUpdateScheduler.schedule(container, highlighter, code, updateOpts, tokenLines)
+    if (!completedSynchronously)
+      scheduledTaskId = taskId
   }
 
   const scheduleFlush = () => {

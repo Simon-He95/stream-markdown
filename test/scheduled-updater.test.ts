@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createScheduledTokenIncrementalUpdater } from '../packages/stream-markdown/src/utils/incremental-tokens.js'
 
 // Minimal highlighter stub similar to other tests
@@ -118,6 +118,89 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     const codeEl = container.querySelector('code')
     const txt = codeEl ? codeEl.textContent ?? '' : ''
     expect(txt.length).toBeGreaterThanOrEqual(0)
+  })
+
+  it('keeps a follow-up task scheduled from onResult observed', async () => {
+    vi.resetModules()
+
+    const observe = vi.fn()
+    const unobserve = vi.fn()
+    const idleCallbacks: IdleRequestCallback[] = []
+    const origGlobalIO = (globalThis as any).IntersectionObserver
+    const origWindowIO = (window as any).IntersectionObserver
+    const origGlobalRIC = (globalThis as any).requestIdleCallback
+    const origWindowRIC = (window as any).requestIdleCallback
+
+    class MockIntersectionObserver {
+      observe = observe
+      unobserve = unobserve
+    }
+
+    ;(globalThis as any).IntersectionObserver = MockIntersectionObserver
+    ;(window as any).IntersectionObserver = MockIntersectionObserver
+    ;(globalThis as any).requestIdleCallback = (cb: IdleRequestCallback) => {
+      idleCallbacks.push(cb)
+      return idleCallbacks.length
+    }
+    ;(window as any).requestIdleCallback = (globalThis as any).requestIdleCallback
+
+    try {
+      const { createScheduledTokenIncrementalUpdater } = await import('../packages/stream-markdown/src/utils/incremental-tokens.js')
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+
+      const results: string[] = []
+
+      const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: 0,
+        onResult: (result) => {
+          results.push(result)
+          if (results.length === 1)
+            updater.update('second')
+        },
+      })
+
+      updater.update('first')
+
+      let calls = 0
+      idleCallbacks.shift()?.({
+        didTimeout: true,
+        timeRemaining: () => calls++ === 0 ? 999 : 0,
+      } as IdleDeadline)
+
+      expect(unobserve).not.toHaveBeenCalledWith(container)
+      expect(container.querySelector('code')?.textContent).toBe('first')
+
+      idleCallbacks.shift()?.({ didTimeout: true, timeRemaining: () => 999 } as IdleDeadline)
+      expect(container.querySelector('code')?.textContent).toBe('second')
+
+      updater.dispose()
+    }
+    finally {
+      if (origGlobalIO === undefined)
+        delete (globalThis as any).IntersectionObserver
+      else
+        (globalThis as any).IntersectionObserver = origGlobalIO
+
+      if (origWindowIO === undefined)
+        delete (window as any).IntersectionObserver
+      else
+        (window as any).IntersectionObserver = origWindowIO
+
+      if (origGlobalRIC === undefined)
+        delete (globalThis as any).requestIdleCallback
+      else
+        (globalThis as any).requestIdleCallback = origGlobalRIC
+
+      if (origWindowRIC === undefined)
+        delete (window as any).requestIdleCallback
+      else
+        (window as any).requestIdleCallback = origWindowRIC
+
+      vi.resetModules()
+    }
   })
 
   it('coalesces updates during the throttle window', async () => {

@@ -94,10 +94,35 @@ export function renderCodeWithTokens(
 
   let lineNumber = startingLineNumber
   const lineHtml = lines.map((line) => {
-    const tokensHtml = line.map((t) => {
-      const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, tokenStyleMode)
-      return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
-    }).join('')
+    const tokensHtml = tokenStyleMode === 'class'
+      ? (() => {
+          let html = ''
+          let i = 0
+
+          while (i < line.length) {
+            const t = line[i]
+            const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, tokenStyleMode)
+            let content = t.content
+            i++
+
+            while (i < line.length) {
+              const t2 = line[i]
+              const styleAttr2 = getTokenStyleAttr(t2.color, t2.fontStyle, tokenStyleMode)
+              if (styleAttr2 !== styleAttr)
+                break
+              content += t2.content
+              i++
+            }
+
+            html += `<span${styleAttr}>${escapeHtml(content)}</span>`
+          }
+
+          return html
+        })()
+      : line.map((t) => {
+          const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, tokenStyleMode)
+          return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
+        }).join('')
 
     const ln = showLineNumbers ? `<span class="line-number" data-line="${lineNumber++}"></span>` : ''
     return `<span class="${lineClass}">${ln}${tokensHtml}</span>`
