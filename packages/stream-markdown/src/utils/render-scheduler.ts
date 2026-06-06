@@ -77,7 +77,10 @@ function cancelFrame() {
   const cancel = cancelScheduledFrame
   rafId = null
   cancelScheduledFrame = null
-  cancel?.(id)
+  try {
+    cancel?.(id)
+  }
+  catch {}
 }
 
 function ensureFrame() {
@@ -86,12 +89,23 @@ function ensureFrame() {
   if (paused)
     return
   const scheduler = getFrameScheduler()
+  let ranSynchronously = false
+  const run: FrameRequestCallback = () => {
+    ranSynchronously = true
+    runFrame()
+  }
+
   try {
     cancelScheduledFrame = scheduler.cancel
-    rafId = scheduler.request(runFrame)
+    const id = scheduler.request(run)
+    if (ranSynchronously)
+      return
+    rafId = id
   }
   catch {
-    rafId = setTimeout(runFrame, 16)
+    if (ranSynchronously)
+      return
+    rafId = setTimeout(run, 16)
     cancelScheduledFrame = id => clearTimeout(id)
   }
 }

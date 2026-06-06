@@ -157,4 +157,54 @@ describe('render scheduler', () => {
         (window as any).cancelAnimationFrame = origWindowCancelRaf
     }
   })
+
+  it('does not leave a stale frame handle when requestAnimationFrame runs synchronously', () => {
+    const origGlobalRaf = (globalThis as any).requestAnimationFrame
+    const origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame
+    const origWindowRaf = (window as any).requestAnimationFrame
+    const origWindowCancelRaf = (window as any).cancelAnimationFrame
+
+    try {
+      const requestAnimationFrame = vi.fn((cb: FrameRequestCallback) => {
+        cb(performance.now())
+        return 123
+      })
+      const cancelAnimationFrame = vi.fn()
+
+      ;(globalThis as any).requestAnimationFrame = requestAnimationFrame
+      ;(globalThis as any).cancelAnimationFrame = cancelAnimationFrame
+      ;(window as any).requestAnimationFrame = requestAnimationFrame
+      ;(window as any).cancelAnimationFrame = cancelAnimationFrame
+
+      resume()
+
+      const order: string[] = []
+      scheduleRenderJob(() => order.push('first'))
+      scheduleRenderJob(() => order.push('second'))
+
+      expect(order).toEqual(['first', 'second'])
+      expect(cancelAnimationFrame).not.toHaveBeenCalled()
+    }
+    finally {
+      if (origGlobalRaf === undefined)
+        delete (globalThis as any).requestAnimationFrame
+      else
+        (globalThis as any).requestAnimationFrame = origGlobalRaf
+
+      if (origGlobalCancelRaf === undefined)
+        delete (globalThis as any).cancelAnimationFrame
+      else
+        (globalThis as any).cancelAnimationFrame = origGlobalCancelRaf
+
+      if (origWindowRaf === undefined)
+        delete (window as any).requestAnimationFrame
+      else
+        (window as any).requestAnimationFrame = origWindowRaf
+
+      if (origWindowCancelRaf === undefined)
+        delete (window as any).cancelAnimationFrame
+      else
+        (window as any).cancelAnimationFrame = origWindowCancelRaf
+    }
+  })
 })

@@ -1,8 +1,16 @@
 import type { Highlighter } from 'shiki'
 import type { RenderOptions, ThemedToken } from './shiki-render.js'
+import type { TokenStyleMode } from './token-style.js'
 import { renderCodeWithTokens } from './shiki-render.js'
 import { getTokenLines } from './token-cache.js'
-import { ensureTokenStyleSheet, getTokenClassName, getTokenStyleAttr, getTokenStyleSignature, normalizeCssColor } from './token-style.js'
+import {
+  canUseTokenStyleClasses,
+  ensureTokenStyleSheet,
+  getTokenClassName,
+  getTokenStyleAttr,
+  getTokenStyleSignature,
+  normalizeCssColor,
+} from './token-style.js'
 
 export type UpdateResult = 'incremental' | 'full' | 'noop'
 
@@ -52,6 +60,7 @@ function renderSignature(options: {
   lang: string
   theme: string
   backgroundColor: string
+  tokenStyleMode: TokenStyleMode
   preClass: string
   codeClass: string
   lineClass: string
@@ -62,6 +71,7 @@ function renderSignature(options: {
     options.lang,
     options.theme,
     options.backgroundColor,
+    options.tokenStyleMode,
     options.preClass,
     options.codeClass,
     options.lineClass,
@@ -94,26 +104,55 @@ function getIncrementalStyleRoot(opts: { styleRoot?: Node | null }, container: H
   return opts.styleRoot === undefined ? container : opts.styleRoot
 }
 
-function lineInnerHtml(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber?: number): string {
-  let tokensHtml = ''
-  let i = 0
+function resolveIncrementalTokenStyleMode(
+  opts: { tokenStyleMode?: TokenStyleMode },
+  styleRoot: Node | null,
+): TokenStyleMode {
+  const requested = opts.tokenStyleMode ?? 'class'
+  return requested === 'class' && canUseTokenStyleClasses(styleRoot)
+    ? 'class'
+    : 'inline'
+}
 
-  while (i < tokens.length) {
-    const t = tokens[i]
-    const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, 'class')
-    let content = t.content
-    i++
+function ensureIncrementalTokenStyleSheet(styleRoot: Node | null, tokenStyleMode: TokenStyleMode): void {
+  if (tokenStyleMode === 'class')
+    ensureTokenStyleSheet(styleRoot)
+}
+
+function lineInnerHtml(
+  tokens: ThemedToken[],
+  showLineNumbers: boolean,
+  lineNumber: number | undefined,
+  tokenStyleMode: TokenStyleMode,
+): string {
+  let tokensHtml = ''
+
+  if (tokenStyleMode === 'inline') {
+    for (const t of tokens) {
+      const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, tokenStyleMode)
+      tokensHtml += `<span${styleAttr}>${escapeHtml(t.content)}</span>`
+    }
+  }
+  else {
+    let i = 0
 
     while (i < tokens.length) {
-      const t2 = tokens[i]
-      const styleAttr2 = getTokenStyleAttr(t2.color, t2.fontStyle, 'class')
-      if (styleAttr2 !== styleAttr)
-        break
-      content += t2.content
+      const t = tokens[i]
+      const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, tokenStyleMode)
+      let content = t.content
       i++
-    }
 
-    tokensHtml += `<span${styleAttr}>${escapeHtml(content)}</span>`
+      while (i < tokens.length) {
+        const t2 = tokens[i]
+        const styleAttr2 = getTokenStyleAttr(t2.color, t2.fontStyle, tokenStyleMode)
+        if (styleAttr2 !== styleAttr)
+          break
+        content += t2.content
+        i++
+      }
+
+      tokensHtml += `<span${styleAttr}>${escapeHtml(content)}</span>`
+    }
   }
 
   const ln = showLineNumbers && typeof lineNumber === 'number'
@@ -149,14 +188,15 @@ function lineSignature(tokens: ThemedToken[], showLineNumbers: boolean, lineNumb
 
 /**
  * Create a DOM <span> element representing a line from tokens.
- * Builds children via createElement/textContent and merges adjacent tokens
- * with identical token styles to reduce node count.
+ * Builds children via createElement/textContent and merges adjacent class-mode
+ * tokens with identical token styles to reduce node count.
  */
 function createLineElement(
   tokens: ThemedToken[],
   showLineNumbers: boolean,
   lineNumber: number | undefined,
   lineClass: string,
+  tokenStyleMode: TokenStyleMode,
   ownerDocument: Document,
   signature?: string,
 ): HTMLSpanElement {
@@ -172,26 +212,33 @@ function createLineElement(
     span.appendChild(ln)
   }
 
-  // Merge adjacent tokens with identical style string to reduce DOM nodes
   let i = 0
   while (i < tokens.length) {
     const t = tokens[i]
-    const className = getTokenClassName(t.color, t.fontStyle)
+    const style = getTokenStyleSignature(t.color, t.fontStyle)
     let content = t.content
     i++
 
-    while (i < tokens.length) {
-      const t2 = tokens[i]
-      const className2 = getTokenClassName(t2.color, t2.fontStyle)
-      if (className2 !== className)
-        break
-      content += t2.content
-      i++
+    if (tokenStyleMode === 'class') {
+      while (i < tokens.length) {
+        const t2 = tokens[i]
+        const style2 = getTokenStyleSignature(t2.color, t2.fontStyle)
+        if (style2 !== style)
+          break
+        content += t2.content
+        i++
+      }
     }
 
     const tspan = ownerDocument.createElement('span')
-    if (className)
-      tspan.className = className
+    if (tokenStyleMode === 'class') {
+      const className = getTokenClassName(t.color, t.fontStyle)
+      if (className)
+        tspan.className = className
+    }
+    else if (style) {
+      tspan.setAttribute('style', style)
+    }
     // Use textContent to avoid HTML parsing and to preserve escaped content
     tspan.textContent = content
     span.appendChild(tspan)
@@ -200,7 +247,7 @@ function createLineElement(
   return span
 }
 
-export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' | 'codeClass' | 'lineClass' | 'tokenStyleMode'> {
+export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' | 'codeClass' | 'lineClass'> {
   preClass?: string
   codeClass?: string
   lineClass?: string
@@ -259,11 +306,13 @@ export function updateCodeTokensIncremental(
   const compareMode = opts.compareMode ?? 'signature'
   const ownerDocument = container.ownerDocument
   const styleRoot = getIncrementalStyleRoot(opts, container)
+  const tokenStyleMode = resolveIncrementalTokenStyleMode(opts, styleRoot)
   const backgroundColor = getThemeBackgroundColor(highlighter, theme)
   const signature = renderSignature({
     lang,
     theme,
     backgroundColor,
+    tokenStyleMode,
     preClass,
     codeClass,
     lineClass,
@@ -292,7 +341,7 @@ export function updateCodeTokensIncremental(
       htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
       tokenLines: providedTokenLines,
       styleRoot,
-      tokenStyleMode: 'class',
+      tokenStyleMode,
     })
     return finishUpdate('full')
   }
@@ -300,7 +349,7 @@ export function updateCodeTokensIncremental(
   // Ensure initial structure
   const codeEl = container.querySelector('code') as HTMLElement | null
   if (codeEl)
-    ensureTokenStyleSheet(styleRoot)
+    ensureIncrementalTokenStyleSheet(styleRoot, tokenStyleMode)
   if (!codeEl)
     return renderFull()
 
@@ -333,7 +382,15 @@ export function updateCodeTokensIncremental(
       const sig = compareMode === 'signature'
         ? lineSignature(tokenLines[lastIdx], showLineNumbers, lineNumber)
         : undefined
-      const newLineEl = createLineElement(tokenLines[lastIdx], showLineNumbers, lineNumber, lineClass, ownerDocument, sig)
+      const newLineEl = createLineElement(
+        tokenLines[lastIdx],
+        showLineNumbers,
+        lineNumber,
+        lineClass,
+        tokenStyleMode,
+        ownerDocument,
+        sig,
+      )
       oldLines[lastIdx].innerHTML = ''
       while (newLineEl.firstChild)
         oldLines[lastIdx].appendChild(newLineEl.firstChild)
@@ -349,13 +406,21 @@ export function updateCodeTokensIncremental(
           const sig = compareMode === 'signature'
             ? lineSignature(tokenLines[j], showLineNumbers, lineNumber)
             : undefined
-          const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, ownerDocument, sig)
+          const span = createLineElement(
+            tokenLines[j],
+            showLineNumbers,
+            lineNumber,
+            lineClass,
+            tokenStyleMode,
+            ownerDocument,
+            sig,
+          )
           frag.appendChild(span)
           ln++
         }
         codeEl.appendChild(frag)
       }
-      ensureTokenStyleSheet(styleRoot)
+      ensureIncrementalTokenStyleSheet(styleRoot, tokenStyleMode)
       return finishUpdate('incremental')
     }
   }
@@ -377,7 +442,7 @@ export function updateCodeTokensIncremental(
         }
       }
       else {
-        const newInner = lineInnerHtml(tokenLines[idx], showLineNumbers, lineNumber)
+        const newInner = lineInnerHtml(tokenLines[idx], showLineNumbers, lineNumber, tokenStyleMode)
         if (oldLine.innerHTML !== newInner) {
           divergeAt = idx
           break
@@ -386,7 +451,7 @@ export function updateCodeTokensIncremental(
       }
     }
     else {
-      const newInner = lineInnerHtml(tokenLines[idx], showLineNumbers, lineNumber)
+      const newInner = lineInnerHtml(tokenLines[idx], showLineNumbers, lineNumber, tokenStyleMode)
       if (oldLine.innerHTML !== newInner) {
         divergeAt = idx
         break
@@ -405,19 +470,27 @@ export function updateCodeTokensIncremental(
         frag.appendChild(ownerDocument.createTextNode('\n'))
         const lineNumber = showLineNumbers ? ln : undefined
         const sig = compareMode === 'signature' ? lineSignature(tokenLines[j], showLineNumbers, lineNumber) : undefined
-        const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, ownerDocument, sig)
+        const span = createLineElement(
+          tokenLines[j],
+          showLineNumbers,
+          lineNumber,
+          lineClass,
+          tokenStyleMode,
+          ownerDocument,
+          sig,
+        )
         frag.appendChild(span)
         ln++
       }
       codeEl.appendChild(frag)
-      ensureTokenStyleSheet(styleRoot)
+      ensureIncrementalTokenStyleSheet(styleRoot, tokenStyleMode)
       return finishUpdate('incremental')
     }
 
     if (newLen < oldLen)
       return renderFull()
 
-    ensureTokenStyleSheet(styleRoot)
+    ensureIncrementalTokenStyleSheet(styleRoot, tokenStyleMode)
     return finishUpdate('noop')
   }
 
@@ -425,7 +498,15 @@ export function updateCodeTokensIncremental(
   if (divergeAt >= oldLen - 1) {
     const lineNumber = showLineNumbers ? (startingLineNumber + divergeAt) : undefined
     const sig = compareMode === 'signature' ? lineSignature(tokenLines[divergeAt], showLineNumbers, lineNumber) : undefined
-    const newLineEl = createLineElement(tokenLines[divergeAt], showLineNumbers, lineNumber, lineClass, ownerDocument, sig)
+    const newLineEl = createLineElement(
+      tokenLines[divergeAt],
+      showLineNumbers,
+      lineNumber,
+      lineClass,
+      tokenStyleMode,
+      ownerDocument,
+      sig,
+    )
     // Replace children of the existing line element with the newly built nodes
     oldLines[divergeAt].innerHTML = ''
     while (newLineEl.firstChild)
@@ -441,13 +522,21 @@ export function updateCodeTokensIncremental(
         frag.appendChild(ownerDocument.createTextNode('\n'))
         const lineNumber = showLineNumbers ? ln : undefined
         const sig = compareMode === 'signature' ? lineSignature(tokenLines[j], showLineNumbers, lineNumber) : undefined
-        const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, ownerDocument, sig)
+        const span = createLineElement(
+          tokenLines[j],
+          showLineNumbers,
+          lineNumber,
+          lineClass,
+          tokenStyleMode,
+          ownerDocument,
+          sig,
+        )
         frag.appendChild(span)
         ln++
       }
       codeEl.appendChild(frag)
     }
-    ensureTokenStyleSheet(styleRoot)
+    ensureIncrementalTokenStyleSheet(styleRoot, tokenStyleMode)
     return finishUpdate('incremental')
   }
 
@@ -492,10 +581,13 @@ export function createTokenIncrementalUpdater(
       const skipSame = tokenLines == null && opts.skipSameCode !== false
       if (skipSame && lastCode === code) {
         const codeEl = target.querySelector('code')
+        const styleRoot = getIncrementalStyleRoot(opts, target)
+        const tokenStyleMode = resolveIncrementalTokenStyleMode(opts, styleRoot)
         const signature = renderSignature({
           lang: opts.lang,
           theme: opts.theme,
           backgroundColor: getThemeBackgroundColor(highlighter, opts.theme),
+          tokenStyleMode,
           preClass: opts.preClass ?? 'shiki',
           codeClass: opts.codeClass ?? '',
           lineClass: opts.lineClass ?? 'line',
@@ -507,7 +599,7 @@ export function createTokenIncrementalUpdater(
           && RENDER_SIGNATURES.get(target) === signature
           && (codeEl.textContent ?? '').replace(/\r/g, '') === code.replace(/\r/g, '')
         ) {
-          ensureTokenStyleSheet(getIncrementalStyleRoot(opts, target))
+          ensureIncrementalTokenStyleSheet(styleRoot, tokenStyleMode)
           opts.onResult?.('noop')
           return 'noop'
         }
@@ -710,6 +802,8 @@ class TokenUpdateScheduler {
       catch {
         // On unexpected error, fall back to full replace and notify
         try {
+          const styleRoot = getIncrementalStyleRoot(task.opts, task.container)
+          const tokenStyleMode = resolveIncrementalTokenStyleMode(task.opts, styleRoot)
           task.container.innerHTML = renderCodeWithTokens(task.highlighter, task.code, {
             lang: task.opts.lang,
             theme: task.opts.theme,
@@ -723,13 +817,14 @@ class TokenUpdateScheduler {
             htmlCache: task.opts.htmlCache,
             htmlCacheMaxEntries: task.opts.htmlCacheMaxEntries,
             tokenLines: task.tokenLines,
-            styleRoot: getIncrementalStyleRoot(task.opts, task.container),
-            tokenStyleMode: 'class',
+            styleRoot,
+            tokenStyleMode,
           })
           setContainerRenderState(task.container, task.code, renderSignature({
             lang: task.opts.lang,
             theme: task.opts.theme,
             backgroundColor: getThemeBackgroundColor(task.highlighter, task.opts.theme),
+            tokenStyleMode,
             preClass: task.opts.preClass ?? 'shiki',
             codeClass: task.opts.codeClass ?? '',
             lineClass: task.opts.lineClass ?? 'line',
@@ -801,7 +896,7 @@ export function createScheduledTokenIncrementalUpdater(
   }
 
   const cancelPendingWork = () => {
-    if (timer) {
+    if (timer !== null) {
       clearTimeout(timer)
       timer = null
     }
@@ -848,7 +943,7 @@ export function createScheduledTokenIncrementalUpdater(
       flush()
       return
     }
-    if (!timer)
+    if (timer === null)
       timer = setTimeout(flush, throttleMs)
   }
 

@@ -164,6 +164,41 @@ describe('updateCodeTokensIncremental', () => {
     expect(style).toContain('font-weight: 600;')
   })
 
+  it('allows inline token styles in incremental rendering when requested', () => {
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+    })
+
+    const token = container.querySelector('code .line span') as HTMLElement
+    expect(token.className).toBe('')
+    expect(token.getAttribute('style')).toContain('color: #ff0000;')
+    expect(token.getAttribute('style')).toContain('font-style: italic;')
+    expect(token.getAttribute('style')).toContain('font-weight: 600;')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+  })
+
+  it('forces a full render when incremental tokenStyleMode changes', () => {
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect((container.querySelector('code .line span') as HTMLElement).className).toMatch(/^smd-token-/)
+
+    const result = updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+    })
+
+    expect(result).toBe('full')
+    const token = container.querySelector('code .line span') as HTMLElement
+    expect(token.className).toBe('')
+    expect(token.getAttribute('style')).toContain('color: #ff0000;')
+  })
+
   it('generates deterministic token class names independent of allocation order', async () => {
     vi.resetModules()
     const first = await import('../packages/stream-markdown/src/utils/token-style.js')
