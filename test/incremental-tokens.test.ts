@@ -368,6 +368,30 @@ describe('updateCodeTokensIncremental', () => {
       .toBe('')
   })
 
+  it('normalizes token colors without depending on runtime CSS.supports', () => {
+    const originalCSS = (globalThis as any).CSS
+    ;(globalThis as any).CSS = {
+      supports: () => false,
+    }
+
+    try {
+      expect(normalizeCssColor('color-mix(in srgb, red, blue)'))
+        .toBe('color-mix(in srgb, red, blue)')
+      expect(normalizeCssColor('#ff0000;}body{display:none'))
+        .toBe('')
+      expect(normalizeCssColor('rgb(255, 0, 0)'))
+        .toBe('rgb(255, 0, 0)')
+    }
+    finally {
+      if (originalCSS === undefined) {
+        delete (globalThis as any).CSS
+      }
+      else {
+        ;(globalThis as any).CSS = originalCSS
+      }
+    }
+  })
+
   it('injects generated token styles into the container shadow root', () => {
     const host = document.createElement('div')
     document.body.appendChild(host)

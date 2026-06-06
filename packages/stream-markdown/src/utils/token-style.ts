@@ -1,6 +1,6 @@
 export type TokenStyleMode = 'inline' | 'class'
 
-const CSS_COLOR_FUNCTION_RE = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\([\w\s.,%/+~-]+\)$/i
+const CSS_COLOR_FUNCTION_RE = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\([\w\s.,%/+~-]+\)$/i
 const CSS_VAR_NAME_RE = /^--[\w-]+$/
 const CSS_VAR_FALLBACK_RE = /^[\w\s#.,%()+/~-]+$/
 
@@ -30,7 +30,6 @@ interface TokenStyleRootState {
   generation: number
 }
 const TOKEN_STYLE_ROOTS = new WeakMap<TokenStyleRoot, TokenStyleRootState>()
-let colorProbe: HTMLElement | null = null
 
 function hasUnsafeCssValueChar(value: string): boolean {
   for (let i = 0; i < value.length; i++) {
@@ -72,53 +71,21 @@ function isSafeCssColorForSsr(value: string): boolean {
     || isSafeCssVar(value)
 }
 
-function isValidDomColor(value: string): boolean {
-  const css = (globalThis as any).CSS
-  if (css && typeof css.supports === 'function') {
-    try {
-      if (css.supports('color', value))
-        return true
-    }
-    catch {
-      // Fall through to style-property probing.
-    }
-  }
-
-  if (typeof document === 'undefined')
-    return false
-
-  if (!colorProbe || colorProbe.ownerDocument !== document)
-    colorProbe = document.createElement('span')
-
-  colorProbe.style.color = ''
-  colorProbe.style.color = value
-  return colorProbe.style.color !== ''
-}
-
 export function normalizeCssColor(color?: string): string {
   const value = color?.trim()
   if (!value || !isSafeCssColorSyntax(value))
     return ''
 
-  // CSS custom properties are valid color values in real browsers. Some DOM
-  // test environments do not preserve them through `style.color = value`, so
-  // accept the already-sanitized var() form before the DOM probe.
-  if (isSafeCssVar(value))
-    return value
-
-  if (typeof document !== 'undefined')
-    return isValidDomColor(value) ? value : ''
-
   return isSafeCssColorForSsr(value) ? value : ''
 }
 
 function tokenStyle(color?: string, fontStyle?: number): string {
-  const cacheKey = `${typeof document === 'undefined' ? 'ssr' : 'dom'}|${color ?? ''}|${fontStyle ?? 0}`
+  const normalizedColor = normalizeCssColor(color)
+  const cacheKey = `${normalizedColor}|${fontStyle ?? 0}`
   const cached = TOKEN_STYLE_CACHE.get(cacheKey)
   if (cached !== undefined)
     return cached
 
-  const normalizedColor = normalizeCssColor(color)
   const colorCss = normalizedColor ? `color: ${normalizedColor};` : ''
   const style = `${colorCss}${fontStyleToCss(fontStyle)}`
   TOKEN_STYLE_CACHE.set(cacheKey, style)
