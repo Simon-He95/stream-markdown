@@ -210,6 +210,42 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     updater.dispose()
   })
 
+  it('does not let an older updater cancel a newer task for the same container', async () => {
+    const idleCallbacks: IdleRequestCallback[] = []
+    const ricImpl = (cb: IdleRequestCallback) => {
+      idleCallbacks.push(cb)
+      return idleCallbacks.length
+    }
+    globalThis.requestIdleCallback = ricImpl
+    window.requestIdleCallback = ricImpl
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const first = createScheduledTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      throttleMs: 0,
+    })
+    const second = createScheduledTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      throttleMs: 0,
+    })
+
+    first.update('old')
+    second.update('new')
+    first.cancel?.()
+
+    expect(idleCallbacks).toHaveLength(1)
+    idleCallbacks.shift()?.({ timeRemaining: () => 999, didTimeout: true } as IdleDeadline)
+
+    expect(container.querySelector('code')?.textContent).toBe('new')
+
+    first.dispose()
+    second.dispose()
+  })
+
   it('keeps a follow-up task scheduled from onResult observed', async () => {
     vi.resetModules()
 

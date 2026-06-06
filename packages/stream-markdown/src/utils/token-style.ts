@@ -205,7 +205,7 @@ export function getTokenStyleAttr(
   fontStyle?: number,
   mode: TokenStyleMode = typeof document === 'undefined' ? 'inline' : 'class',
 ): string {
-  if (mode === 'class' && typeof document !== 'undefined')
+  if (mode === 'class')
     return getTokenClassAttr(color, fontStyle)
   return getTokenInlineStyleAttr(color, fontStyle)
 }
@@ -237,6 +237,10 @@ function resolveStyleRoot(target?: Node | null): TokenStyleRoot | null {
     return document
 
   return null
+}
+
+export function canUseTokenStyleClasses(target?: Node | null): boolean {
+  return resolveStyleRoot(target) != null
 }
 
 function getRootDocument(root: TokenStyleRoot): Document {

@@ -584,6 +584,7 @@ class TokenUpdateScheduler {
     // Deduplicate: if a task already exists for this container, replace its payload
     const prev = this.byContainer.get(container)
     if (prev) {
+      prev.id = this.nextId++
       prev.code = code
       prev.highlighter = highlighter
       prev.opts = opts
@@ -754,9 +755,12 @@ class TokenUpdateScheduler {
     }
   }
 
-  cancelFor(container: HTMLElement) {
+  cancelFor(container: HTMLElement, taskId?: number) {
     const prev = this.byContainer.get(container)
     if (prev) {
+      if (taskId !== undefined && prev.id !== taskId)
+        return
+
       this.byContainer.delete(container)
       const idx = this.queue.findIndex(t => t.id === prev.id)
       if (idx !== -1)
@@ -783,8 +787,9 @@ export function createScheduledTokenIncrementalUpdater(
   const cancelScheduledTask = () => {
     if (!target || scheduledTaskId == null)
       return
-    globalTokenUpdateScheduler.cancelFor(target)
+    const taskId = scheduledTaskId
     scheduledTaskId = null
+    globalTokenUpdateScheduler.cancelFor(target, taskId)
   }
 
   const cancelPendingWork = () => {

@@ -102,6 +102,33 @@ describe('renderCodeWithTokens', () => {
     expect(ssrHtml).not.toContain('class="smd-token-')
   })
 
+  it('uses class token mode with an explicit document styleRoot even without a global document', () => {
+    const originalDocument = (globalThis as any).document
+    const styleRoot = createDocumentStub()
+
+    try {
+      delete (globalThis as any).document
+
+      const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        styleRoot,
+        tokenStyleMode: 'class',
+      })
+
+      expect(html).toContain('class="smd-token-')
+      expect(html).not.toContain('style="color: #ff0000;')
+      expect((styleRoot as any).querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+        .toContain('color: #ff0000;')
+    }
+    finally {
+      if (originalDocument === undefined)
+        delete (globalThis as any).document
+      else
+        (globalThis as any).document = originalDocument
+    }
+  })
+
   it('does not reuse cached HTML when explicit token lines are provided', () => {
     const opts = {
       lang: 'ts',

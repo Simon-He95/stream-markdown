@@ -2,7 +2,7 @@ import type { Highlighter } from 'shiki'
 import type { TokenStyleMode } from './token-style.js'
 import { getCachedHtml, setCachedHtml } from './html-cache.js'
 import { getTokenLines } from './token-cache.js'
-import { ensureTokenStyleSheet, getTokenStyleAttr, normalizeCssColor } from './token-style.js'
+import { canUseTokenStyleClasses, ensureTokenStyleSheet, getTokenStyleAttr, normalizeCssColor } from './token-style.js'
 
 export interface RenderOptions {
   lang: string
@@ -75,7 +75,7 @@ export function renderCodeWithTokens(
   const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber = 1 } = opts
   const hasExplicitStyleRoot = opts.styleRoot !== undefined
   const requestedTokenStyleMode: TokenStyleMode = opts.tokenStyleMode ?? (hasExplicitStyleRoot ? 'class' : 'inline')
-  const tokenStyleMode: TokenStyleMode = requestedTokenStyleMode === 'class' && typeof document !== 'undefined'
+  const tokenStyleMode: TokenStyleMode = requestedTokenStyleMode === 'class' && canUseTokenStyleClasses(opts.styleRoot)
     ? 'class'
     : 'inline'
   let bg: string | undefined
