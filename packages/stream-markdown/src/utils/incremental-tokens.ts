@@ -643,10 +643,17 @@ export function createScheduledTokenIncrementalUpdater(
   opts: TokenIncrementalOptions,
 ): TokenIncrementalUpdater {
   let alive = true
-  let observed = false
+  let hasScheduledTask = false
   let pendingCode: string | null = null
   let pendingTokenLines: ThemedToken[][] | undefined
   let timer: ReturnType<typeof setTimeout> | null = null
+
+  const cancelScheduledTask = () => {
+    if (!container || !hasScheduledTask)
+      return
+    globalTokenUpdateScheduler.cancelFor(container)
+    hasScheduledTask = false
+  }
 
   const flush = () => {
     timer = null
@@ -665,7 +672,7 @@ export function createScheduledTokenIncrementalUpdater(
 
     // Schedule the update; result will be delivered via opts.onResult when executed
     globalTokenUpdateScheduler.schedule(container, highlighter, code, updateOpts, tokenLines)
-    observed = true
+    hasScheduledTask = true
   }
 
   const scheduleFlush = () => {
@@ -685,6 +692,7 @@ export function createScheduledTokenIncrementalUpdater(
       if (!container)
         return 'noop'
 
+      cancelScheduledTask()
       pendingCode = code
       pendingTokenLines = tokenLines
       scheduleFlush()
@@ -700,7 +708,7 @@ export function createScheduledTokenIncrementalUpdater(
       }
       pendingCode = null
       pendingTokenLines = undefined
-      globalTokenUpdateScheduler.cancelFor(container)
+      cancelScheduledTask()
       container.innerHTML = ''
     },
     dispose: () => {
@@ -711,8 +719,7 @@ export function createScheduledTokenIncrementalUpdater(
       }
       pendingCode = null
       pendingTokenLines = undefined
-      if (observed && container)
-        globalTokenUpdateScheduler.cancelFor(container)
+      cancelScheduledTask()
       // leave container as-is; caller may remove
     },
   }

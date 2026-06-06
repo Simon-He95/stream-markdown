@@ -46,6 +46,7 @@ export function createShikiStreamCachedRenderer(
   let updater: TokenIncrementalUpdater | null = null
   const useRaf = options.scheduleInRaf ?? true
   let scheduled = false
+  let cancelScheduledRender: (() => void) | null = null
   let pendingRender: { code: string, tokenLines: ThemedToken[][] } | null = null
   let disposed = false
   let unregisterObserver: (() => void) | null = null
@@ -88,6 +89,15 @@ export function createShikiStreamCachedRenderer(
     const next = opChain.then(task, task)
     opChain = next.then(() => undefined, () => undefined)
     return next
+  }
+
+  const cancelPendingRender = () => {
+    if (cancelScheduledRender) {
+      cancelScheduledRender()
+      cancelScheduledRender = null
+    }
+    scheduled = false
+    pendingRender = null
   }
 
   if (typeof window !== 'undefined' && container) {
@@ -133,7 +143,8 @@ export function createShikiStreamCachedRenderer(
       return
     scheduled = true
     const priority = isVisible ? 'high' : 'normal'
-    scheduleRenderJob(() => {
+    cancelScheduledRender = scheduleRenderJob(() => {
+      cancelScheduledRender = null
       scheduled = false
       if (disposed || !updater || !pendingRender)
         return
@@ -224,7 +235,7 @@ export function createShikiStreamCachedRenderer(
 
   const dispose = () => {
     disposed = true
-    pendingRender = null
+    cancelPendingRender()
     updater?.dispose()
     updater = null
     tokenizer?.clear()

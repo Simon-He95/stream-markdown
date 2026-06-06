@@ -142,6 +142,42 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     expect(container.querySelector('code')?.textContent).toBe('final')
   })
 
+  it('cancels a queued stale update when a newer throttled update arrives before idle work runs', async () => {
+    const idleCallbacks: IdleRequestCallback[] = []
+    const ricImpl = (cb: IdleRequestCallback) => {
+      idleCallbacks.push(cb)
+      return idleCallbacks.length
+    }
+    globalThis.requestIdleCallback = ricImpl
+    window.requestIdleCallback = ricImpl
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      throttleMs: 10,
+    })
+
+    updater.update('first')
+    await new Promise(r => setTimeout(r, 15))
+    expect(idleCallbacks).toHaveLength(1)
+
+    updater.update('final')
+
+    idleCallbacks.shift()?.({ timeRemaining: () => 999, didTimeout: true } as IdleDeadline)
+    expect(container.querySelector('code')).toBeNull()
+
+    await new Promise(r => setTimeout(r, 15))
+    expect(idleCallbacks).toHaveLength(1)
+
+    idleCallbacks.shift()?.({ timeRemaining: () => 999, didTimeout: true } as IdleDeadline)
+    expect(container.querySelector('code')?.textContent).toBe('final')
+
+    updater.dispose()
+  })
+
   it('does not enable appendOnlyFastPath by default', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

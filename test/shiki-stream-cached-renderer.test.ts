@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearAll, getQueueLength, pause, resume } from '../packages/stream-markdown/src/utils/render-scheduler.js'
 import { createShikiStreamCachedRenderer } from '../packages/stream-markdown/src/utils/shiki-stream-cached-renderer.js'
 
 const shikiStreamMock = vi.hoisted(() => ({
@@ -49,6 +50,36 @@ describe('createShikiStreamCachedRenderer', () => {
 
     expect(renderer.getState().tokenCount).toBe(0)
     renderer.dispose()
+  })
+
+  it('cancels queued scheduled render on dispose', async () => {
+    pause()
+    clearAll()
+
+    try {
+      shikiStreamMock.enqueueResults.push({
+        recall: 0,
+        stable: [{ content: 'queued' }],
+        unstable: [],
+      })
+
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+      const renderer = createShikiStreamCachedRenderer(container, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+      })
+
+      await renderer.updateCode('queued')
+      expect(getQueueLength()).toBeGreaterThan(0)
+
+      renderer.dispose()
+      expect(getQueueLength()).toBe(0)
+    }
+    finally {
+      resume()
+      clearAll()
+    }
   })
 
   it('renders pending token lines with their matching code snapshot', async () => {
