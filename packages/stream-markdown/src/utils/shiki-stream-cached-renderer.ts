@@ -1,4 +1,4 @@
-import type { TokenIncrementalUpdater } from './incremental-tokens.js'
+import type { TokenIncrementalOptions, TokenIncrementalUpdater } from './incremental-tokens.js'
 import type { ThemedToken } from './shiki-render.js'
 import type { ShikiStreamRendererOptions } from './shiki-stream-renderer.js'
 import { ShikiStreamTokenizer } from 'shiki-stream'
@@ -139,17 +139,33 @@ export function createShikiStreamCachedRenderer(
   if (typeof options.timeBudget === 'number' && options.timeBudget >= 0)
     setTimeBudget(options.timeBudget)
 
+  const getUpdaterOptions = (): TokenIncrementalOptions => ({
+    lang: currentLang ?? 'plaintext',
+    theme: currentTheme,
+    preClass: options.preClass,
+    codeClass: options.codeClass,
+    lineClass: options.lineClass,
+    showLineNumbers: options.showLineNumbers,
+    startingLineNumber: options.startingLineNumber,
+    tokenCache: options.tokenCache,
+    tokenCacheMaxEntries: options.tokenCacheMaxEntries,
+    htmlCache: options.htmlCache,
+    htmlCacheMaxEntries: options.htmlCacheMaxEntries,
+    styleRoot: options.styleRoot,
+    tokenStyleMode: options.tokenStyleMode,
+    compareMode: options.compareMode,
+    skipSameCode: options.skipSameCode,
+    appendOnlyFastPath: options.appendOnlyFastPath,
+    throttleMs: options.throttleMs,
+    onResult: options.onResult,
+  })
+
   const reinitUpdater = () => {
     updater?.dispose()
     if (disposed || !highlighter)
       return
 
-    updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
-      lang: currentLang ?? 'plaintext',
-      theme: currentTheme,
-      appendOnlyFastPath: options.appendOnlyFastPath,
-      throttleMs: options.throttleMs,
-    })
+    updater = createScheduledTokenIncrementalUpdater(container, highlighter, getUpdaterOptions())
   }
 
   const scheduleRender = (code: string, tokenLines: ThemedToken[][]) => {

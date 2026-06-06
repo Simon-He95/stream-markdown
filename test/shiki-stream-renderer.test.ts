@@ -109,4 +109,54 @@ describe('createShikiStreamRenderer', () => {
 
     renderer.dispose()
   })
+
+  it('passes render options to the scheduled token updater', async () => {
+    const rafCallbacks: FrameRequestCallback[] = []
+    const idleCallbacks: IdleRequestCallback[] = []
+
+    const requestAnimationFrameMock = (cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb)
+      return rafCallbacks.length
+    }
+    const requestIdleCallbackMock = (cb: IdleRequestCallback) => {
+      idleCallbacks.push(cb)
+      return idleCallbacks.length
+    }
+
+    ;(globalThis as any).requestAnimationFrame = requestAnimationFrameMock
+    ;(globalThis as any).cancelAnimationFrame = vi.fn()
+    ;(window as any).requestAnimationFrame = requestAnimationFrameMock
+    ;(window as any).cancelAnimationFrame = vi.fn()
+    ;(globalThis as any).requestIdleCallback = requestIdleCallbackMock
+    ;(window as any).requestIdleCallback = requestIdleCallbackMock
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      throttleMs: 0,
+      preClass: 'custom-pre',
+      codeClass: 'custom-code',
+      lineClass: 'custom-line',
+      showLineNumbers: true,
+      startingLineNumber: 10,
+    })
+
+    await renderer.updateCode('const a = 1')
+
+    rafCallbacks.shift()?.(performance.now())
+    idleCallbacks.shift()?.({
+      didTimeout: true,
+      timeRemaining: () => 999,
+    } as IdleDeadline)
+
+    expect(container.querySelector('pre')?.className).toBe('custom-pre')
+    expect(container.querySelector('code')?.className).toBe('custom-code')
+    expect(container.querySelectorAll('code .custom-line')).toHaveLength(1)
+    expect(container.querySelector('code .custom-line .line-number')?.getAttribute('data-line')).toBe('10')
+
+    renderer.dispose()
+  })
 })

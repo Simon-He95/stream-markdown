@@ -71,6 +71,47 @@ describe('render scheduler', () => {
     }
   })
 
+  it('does not schedule a frame when resuming an empty queue', () => {
+    const origGlobalRaf = (globalThis as any).requestAnimationFrame
+    const origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame
+    const origWindowRaf = (window as any).requestAnimationFrame
+    const origWindowCancelRaf = (window as any).cancelAnimationFrame
+    const requestAnimationFrame = vi.fn(() => 123)
+    const cancelAnimationFrame = vi.fn()
+
+    try {
+      ;(globalThis as any).requestAnimationFrame = requestAnimationFrame
+      ;(globalThis as any).cancelAnimationFrame = cancelAnimationFrame
+      ;(window as any).requestAnimationFrame = requestAnimationFrame
+      ;(window as any).cancelAnimationFrame = cancelAnimationFrame
+
+      resume()
+
+      expect(requestAnimationFrame).not.toHaveBeenCalled()
+    }
+    finally {
+      if (origGlobalRaf === undefined)
+        delete (globalThis as any).requestAnimationFrame
+      else
+        (globalThis as any).requestAnimationFrame = origGlobalRaf
+
+      if (origGlobalCancelRaf === undefined)
+        delete (globalThis as any).cancelAnimationFrame
+      else
+        (globalThis as any).cancelAnimationFrame = origGlobalCancelRaf
+
+      if (origWindowRaf === undefined)
+        delete (window as any).requestAnimationFrame
+      else
+        (window as any).requestAnimationFrame = origWindowRaf
+
+      if (origWindowCancelRaf === undefined)
+        delete (window as any).cancelAnimationFrame
+      else
+        (window as any).cancelAnimationFrame = origWindowCancelRaf
+    }
+  })
+
   it('falls back to setTimeout when requestAnimationFrame is unavailable', async () => {
     const origGlobalRaf = (globalThis as any).requestAnimationFrame
     const origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame

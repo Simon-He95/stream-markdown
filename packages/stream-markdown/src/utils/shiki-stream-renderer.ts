@@ -1,4 +1,4 @@
-import type { TokenIncrementalUpdater } from './incremental-tokens.js'
+import type { TokenIncrementalOptions, TokenIncrementalUpdater } from './incremental-tokens.js'
 import { registerHighlight } from './highlight.js'
 import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
@@ -23,6 +23,20 @@ export interface ShikiStreamRendererOptions {
   // pass-through controls for the scheduled token updater
   appendOnlyFastPath?: boolean
   throttleMs?: number
+  compareMode?: TokenIncrementalOptions['compareMode']
+  skipSameCode?: boolean
+  preClass?: string
+  codeClass?: string
+  lineClass?: string
+  showLineNumbers?: boolean
+  startingLineNumber?: number
+  tokenCache?: boolean
+  tokenCacheMaxEntries?: number
+  htmlCache?: boolean
+  htmlCacheMaxEntries?: number
+  styleRoot?: Node | null
+  tokenStyleMode?: TokenIncrementalOptions['tokenStyleMode']
+  onResult?: TokenIncrementalOptions['onResult']
 }
 
 export function createShikiStreamRenderer(
@@ -99,16 +113,32 @@ export function createShikiStreamRenderer(
     setTimeBudget(options.timeBudget)
   }
 
+  const getUpdaterOptions = (): TokenIncrementalOptions => ({
+    lang: currentLang ?? 'plaintext',
+    theme: currentTheme,
+    preClass: options.preClass,
+    codeClass: options.codeClass,
+    lineClass: options.lineClass,
+    showLineNumbers: options.showLineNumbers,
+    startingLineNumber: options.startingLineNumber,
+    tokenCache: options.tokenCache,
+    tokenCacheMaxEntries: options.tokenCacheMaxEntries,
+    htmlCache: options.htmlCache,
+    htmlCacheMaxEntries: options.htmlCacheMaxEntries,
+    styleRoot: options.styleRoot,
+    tokenStyleMode: options.tokenStyleMode,
+    compareMode: options.compareMode,
+    skipSameCode: options.skipSameCode,
+    appendOnlyFastPath: options.appendOnlyFastPath,
+    throttleMs: options.throttleMs,
+    onResult: options.onResult,
+  })
+
   const reinitUpdater = () => {
     updater?.dispose()
     if (disposed || !highlighter)
       return
-    updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
-      lang: currentLang ?? 'plaintext',
-      theme: currentTheme,
-      appendOnlyFastPath: options.appendOnlyFastPath,
-      throttleMs: options.throttleMs,
-    })
+    updater = createScheduledTokenIncrementalUpdater(container, highlighter, getUpdaterOptions())
   }
 
   const scheduleRender = () => {

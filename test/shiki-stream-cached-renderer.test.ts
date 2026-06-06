@@ -52,6 +52,39 @@ describe('createShikiStreamCachedRenderer', () => {
     renderer.dispose()
   })
 
+  it('passes render options to the cached scheduled token updater', async () => {
+    shikiStreamMock.enqueueResults.push({
+      recall: 0,
+      stable: [{ content: 'const a = 1' }],
+      unstable: [],
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+      preClass: 'cached-pre',
+      codeClass: 'cached-code',
+      lineClass: 'cached-line',
+      showLineNumbers: true,
+      startingLineNumber: 7,
+    })
+
+    await renderer.updateCode('const a = 1')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(container.querySelector('pre')?.className).toBe('cached-pre')
+    expect(container.querySelector('code')?.className).toBe('cached-code')
+    expect(container.querySelectorAll('code .cached-line')).toHaveLength(1)
+    expect(container.querySelector('code .cached-line .line-number')?.getAttribute('data-line')).toBe('7')
+
+    renderer.dispose()
+  })
+
   it('cancels queued scheduled render on dispose', async () => {
     pause()
     clearAll()

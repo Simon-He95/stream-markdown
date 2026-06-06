@@ -88,6 +88,8 @@ function ensureFrame() {
     return
   if (paused)
     return
+  if (queue.length === 0)
+    return
   const scheduler = getFrameScheduler()
   let ranSynchronously = false
   const run: FrameRequestCallback = () => {
