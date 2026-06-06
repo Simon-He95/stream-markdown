@@ -81,7 +81,6 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
       lang: 'ts',
       theme: 'vitesse-dark',
-      throttleMs: 0,
       onResult: (r: string) => results.push(r),
     })
 

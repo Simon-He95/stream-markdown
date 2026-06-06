@@ -33,7 +33,7 @@ function escapeHtml(str: string): string {
 
 function lineInnerHtml(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber?: number): string {
   const tokensHtml = tokens.map((t) => {
-    const styleAttr = getTokenStyleAttr(t.color, t.fontStyle)
+    const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, 'class')
     return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
   }).join('')
   const ln = showLineNumbers && typeof lineNumber === 'number'
@@ -154,6 +154,7 @@ export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' 
   appendOnlyFastPath?: boolean
   /**
    * Coalesce scheduled updates for this many milliseconds before rendering.
+   * Defaults to 0, i.e. no extra timeout-based throttling.
    */
   throttleMs?: number
 }
@@ -200,6 +201,7 @@ export function updateCodeTokensIncremental(
       htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
       tokenLines: providedTokenLines,
       styleRoot,
+      tokenStyleMode: 'class',
     })
     opts.onResult?.('full')
     LAST_CODE.set(container, code)
@@ -338,6 +340,7 @@ export function updateCodeTokensIncremental(
         htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
         tokenLines: providedTokenLines,
         styleRoot,
+        tokenStyleMode: 'class',
       })
       opts.onResult?.('full')
       LAST_CODE.set(container, code)
@@ -396,6 +399,7 @@ export function updateCodeTokensIncremental(
     htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
     tokenLines: providedTokenLines,
     styleRoot,
+    tokenStyleMode: 'class',
   })
   opts.onResult?.('full')
   LAST_CODE.set(container, code)
@@ -600,6 +604,7 @@ class TokenUpdateScheduler {
             htmlCacheMaxEntries: task.opts.htmlCacheMaxEntries,
             tokenLines: task.tokenLines,
             styleRoot: task.opts.styleRoot ?? task.container,
+            tokenStyleMode: 'class',
           })
           LAST_CODE.set(task.container, task.code)
           task.opts.onResult?.('full')
@@ -676,7 +681,7 @@ export function createScheduledTokenIncrementalUpdater(
   }
 
   const scheduleFlush = () => {
-    const throttleMs = opts.throttleMs ?? 50
+    const throttleMs = opts.throttleMs ?? 0
     if (throttleMs <= 0) {
       flush()
       return

@@ -59,12 +59,14 @@ describe('renderCodeWithTokens', () => {
   it('does not reuse cached DOM class HTML when rendering without a DOM', () => {
     const originalDocument = (globalThis as any).document
     ;(globalThis as any).document = createDocumentStub()
+    const styleRoot = (globalThis as any).document as Document
 
     try {
       const domHtml = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
         lang: 'ts',
         theme: 'vitesse-dark',
         htmlCache: true,
+        styleRoot,
       })
 
       expect(domHtml).toContain('class="smd-token-')

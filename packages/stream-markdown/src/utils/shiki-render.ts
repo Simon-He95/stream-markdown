@@ -1,4 +1,5 @@
 import type { Highlighter } from 'shiki'
+import type { TokenStyleMode } from './token-style.js'
 import { getCachedHtml, setCachedHtml } from './html-cache.js'
 import { getTokenLines } from './token-cache.js'
 import { ensureTokenStyleSheet, getTokenStyleAttr } from './token-style.js'
@@ -17,6 +18,7 @@ export interface RenderOptions {
   htmlCacheMaxEntries?: number
   tokenLines?: ThemedToken[][]
   styleRoot?: Node | null
+  tokenStyleMode?: TokenStyleMode
 }
 
 export interface ThemedToken {
@@ -47,8 +49,12 @@ export function renderCodeWithTokens(
   opts: RenderOptions,
 ): string {
   const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber = 1 } = opts
-  const tokenStyleMode = typeof document === 'undefined' ? 'inline-token-style' : 'class-token-style'
-  const cacheKey = `${tokenStyleMode}\u0001${lang}\u0001${theme}\u0001${preClass}\u0001${codeClass}\u0001${lineClass}\u0001${showLineNumbers ? 1 : 0}\u0001${startingLineNumber}\u0001${code}`
+  const hasStyleRoot = Object.prototype.hasOwnProperty.call(opts, 'styleRoot')
+  const requestedTokenStyleMode: TokenStyleMode = opts.tokenStyleMode ?? (hasStyleRoot ? 'class' : 'inline')
+  const tokenStyleMode: TokenStyleMode = requestedTokenStyleMode === 'class' && typeof document !== 'undefined'
+    ? 'class'
+    : 'inline'
+  const cacheKey = `${tokenStyleMode}-token-style\u0001${lang}\u0001${theme}\u0001${preClass}\u0001${codeClass}\u0001${lineClass}\u0001${showLineNumbers ? 1 : 0}\u0001${startingLineNumber}\u0001${code}`
   const canUseHtmlCache = opts.tokenLines == null
   if (canUseHtmlCache) {
     const cachedHtml = getCachedHtml(highlighter, cacheKey, {
@@ -56,7 +62,8 @@ export function renderCodeWithTokens(
       htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
     })
     if (cachedHtml) {
-      ensureTokenStyleSheet(opts.styleRoot)
+      if (tokenStyleMode === 'class')
+        ensureTokenStyleSheet(opts.styleRoot)
       return cachedHtml
     }
   }
@@ -88,7 +95,7 @@ export function renderCodeWithTokens(
   let lineNumber = startingLineNumber
   const lineHtml = lines.map((line) => {
     const tokensHtml = line.map((t) => {
-      const styleAttr = getTokenStyleAttr(t.color, t.fontStyle)
+      const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, tokenStyleMode)
       return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
     }).join('')
 
@@ -99,7 +106,8 @@ export function renderCodeWithTokens(
   const preStyle = bg ? ` style="background-color: ${bg};"` : ''
   const codeCls = codeClass ? ` class="${codeClass}"` : ''
   const html = `<pre class="${preClass}"${preStyle}><code${codeCls}>${lineHtml}</code></pre>`
-  ensureTokenStyleSheet(opts.styleRoot)
+  if (tokenStyleMode === 'class')
+    ensureTokenStyleSheet(opts.styleRoot)
   if (canUseHtmlCache) {
     setCachedHtml(highlighter, cacheKey, html, {
       htmlCache: opts.htmlCache,

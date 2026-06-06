@@ -1,3 +1,5 @@
+export type TokenStyleMode = 'inline' | 'class'
+
 const CSS_COLOR_FUNCTION_RE = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\([\w\s.,%/+~-]+\)$/i
 const CSS_VAR_NAME_RE = /^--[\w-]+$/
 const CSS_VAR_FALLBACK_RE = /^[\w\s#.,%()+/~-]+$/
@@ -166,15 +168,30 @@ export function getTokenClassName(color?: string, fontStyle?: number): string {
   return getTokenClassNameForStyle(tokenStyle(color, fontStyle))
 }
 
-export function getTokenStyleAttr(color?: string, fontStyle?: number): string {
+export function getTokenInlineStyleAttr(color?: string, fontStyle?: number): string {
   const style = tokenStyle(color, fontStyle)
   if (!style)
     return ''
 
-  if (typeof document === 'undefined')
-    return ` style="${escapeAttr(style)}"`
+  return ` style="${escapeAttr(style)}"`
+}
+
+export function getTokenClassAttr(color?: string, fontStyle?: number): string {
+  const style = tokenStyle(color, fontStyle)
+  if (!style)
+    return ''
 
   return ` class="${getTokenClassNameForStyle(style)}"`
+}
+
+export function getTokenStyleAttr(
+  color?: string,
+  fontStyle?: number,
+  mode: TokenStyleMode = typeof document === 'undefined' ? 'inline' : 'class',
+): string {
+  if (mode === 'class' && typeof document !== 'undefined')
+    return getTokenClassAttr(color, fontStyle)
+  return getTokenInlineStyleAttr(color, fontStyle)
 }
 
 function isDocumentRoot(node: Node): node is Document {

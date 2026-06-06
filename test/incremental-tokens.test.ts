@@ -113,6 +113,7 @@ describe('updateCodeTokensIncremental', () => {
       lang: 'ts',
       theme: 'vitesse-dark',
       htmlCache: true,
+      styleRoot: document,
     }
 
     const html1 = renderCodeWithTokens(coloredHl as any, 'const a = 1', opts)
@@ -130,6 +131,16 @@ describe('updateCodeTokensIncremental', () => {
     expect(html2).toBe(html1)
     styleEl = document.head.querySelector('style[data-stream-markdown-token-styles]')
     expect(styleEl?.textContent).toContain('color: #ff0000;')
+  })
+
+  it('keeps renderCodeWithTokens self-contained by default in a DOM environment', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(html).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')
+    expect(html).not.toContain('class="smd-token-')
   })
 
   it('rehydrates token style rules when an updater skips identical code', () => {
