@@ -52,6 +52,7 @@ export function createShikiStreamRenderer(
       cancelScheduledRender = null
     }
     scheduled = false
+    updater?.cancel?.()
   }
 
   const ensureHighlighter = async () => {
@@ -144,11 +145,14 @@ export function createShikiStreamRenderer(
     const nextLang = lang ?? currentLang
     const langChanged = nextLang !== currentLang
     currentCode = code
+    cancelPendingRender()
 
     if (!highlighter || langChanged) {
       currentLang = nextLang
       await ensureHighlighter()
       await ensureThemeLoaded(currentTheme)
+      if (disposed)
+        return
       reinitUpdater()
     }
     else if (!updater) {
@@ -165,6 +169,7 @@ export function createShikiStreamRenderer(
       return
     if (!theme || theme === currentTheme)
       return
+    cancelPendingRender()
     // Make sure the target theme is loaded on the highlighter before switching.
     await ensureThemeLoaded(theme)
     if (disposed)

@@ -241,10 +241,10 @@ export function createShikiStreamCachedRenderer(
       return
     if (!theme || theme === currentTheme)
       return
+    cancelPendingRender()
     await ensureThemeLoaded(theme)
     if (disposed)
       return
-    cancelPendingRender()
     currentTheme = theme
     tokenizer?.clear()
     tokenizer = null
