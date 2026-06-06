@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTokenIncrementalUpdater, updateCodeTokensIncremental } from '../packages/stream-markdown/src/utils/incremental-tokens.js'
 import { renderCodeWithTokens } from '../packages/stream-markdown/src/utils/shiki-render.js'
+import { normalizeCssColor } from '../packages/stream-markdown/src/utils/token-style.js'
 import { streamContent as tsMarkdown } from '../src/pages/markdown.js'
 import { markdownContent } from '../src/samples/content-markdown.js'
 import { phpContent } from '../src/samples/content-php.js'
@@ -225,6 +226,28 @@ describe('updateCodeTokensIncremental', () => {
 
     expect(document.head.textContent ?? '').not.toContain('body{display:none')
     expect(document.head.textContent ?? '').not.toContain('}body{')
+  })
+
+  it('escapes public class-name options in generated HTML', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      preClass: 'shiki" data-bad="1',
+      codeClass: 'code" data-bad="1',
+      lineClass: 'line" data-bad="1',
+    })
+
+    expect(html).toContain('class="shiki&quot; data-bad=&quot;1"')
+    expect(html).toContain('class="code&quot; data-bad=&quot;1"')
+    expect(html).toContain('class="line&quot; data-bad=&quot;1"')
+    expect(html).not.toContain('data-bad="1"')
+  })
+
+  it('keeps sanitized CSS custom-property colors', () => {
+    expect(normalizeCssColor('var(--smd-token-color, #ff0000)'))
+      .toBe('var(--smd-token-color, #ff0000)')
+    expect(normalizeCssColor('var(--smd-token-color, url(https://x.test/a))'))
+      .toBe('')
   })
 
   it('injects generated token styles into the container shadow root', () => {

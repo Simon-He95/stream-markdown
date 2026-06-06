@@ -18,6 +18,7 @@ function fontStyleToCss(style?: number): string {
 }
 
 const TOKEN_CLASS_CACHE = new Map<string, string>()
+const TOKEN_STYLE_CACHE = new Map<string, string>()
 const TOKEN_STYLE_BY_CLASS = new Map<string, string>()
 const TOKEN_STYLE_RULES: string[] = []
 let tokenStyleGeneration = 0
@@ -97,6 +98,12 @@ export function normalizeCssColor(color?: string): string {
   if (!value || !isSafeCssColorSyntax(value))
     return ''
 
+  // CSS custom properties are valid color values in real browsers. Some DOM
+  // test environments do not preserve them through `style.color = value`, so
+  // accept the already-sanitized var() form before the DOM probe.
+  if (isSafeCssVar(value))
+    return value
+
   if (typeof document !== 'undefined')
     return isValidDomColor(value) ? value : ''
 
@@ -104,9 +111,16 @@ export function normalizeCssColor(color?: string): string {
 }
 
 function tokenStyle(color?: string, fontStyle?: number): string {
+  const cacheKey = `${typeof document === 'undefined' ? 'ssr' : 'dom'}|${color ?? ''}|${fontStyle ?? 0}`
+  const cached = TOKEN_STYLE_CACHE.get(cacheKey)
+  if (cached !== undefined)
+    return cached
+
   const normalizedColor = normalizeCssColor(color)
   const colorCss = normalizedColor ? `color: ${normalizedColor};` : ''
-  return `${colorCss}${fontStyleToCss(fontStyle)}`
+  const style = `${colorCss}${fontStyleToCss(fontStyle)}`
+  TOKEN_STYLE_CACHE.set(cacheKey, style)
+  return style
 }
 
 function escapeAttr(value: string): string {

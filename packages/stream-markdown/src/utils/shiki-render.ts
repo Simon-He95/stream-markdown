@@ -131,13 +131,14 @@ export function renderCodeWithTokens(
         }).join('')
 
     const ln = showLineNumbers ? `<span class="line-number" data-line="${lineNumber++}"></span>` : ''
-    return `<span class="${lineClass}">${ln}${tokensHtml}</span>`
+    return `<span class="${escapeAttr(lineClass)}">${ln}${tokensHtml}</span>`
   }).join('\n')
 
   const safeBg = normalizeCssColor(bg)
   const preStyle = safeBg ? ` style="background-color: ${escapeAttr(safeBg)};"` : ''
-  const codeCls = codeClass ? ` class="${codeClass}"` : ''
-  const html = `<pre class="${preClass}"${preStyle}><code${codeCls}>${lineHtml}</code></pre>`
+  const safePreClass = escapeAttr(preClass)
+  const codeCls = codeClass ? ` class="${escapeAttr(codeClass)}"` : ''
+  const html = `<pre class="${safePreClass}"${preStyle}><code${codeCls}>${lineHtml}</code></pre>`
   if (tokenStyleMode === 'class')
     ensureTokenStyleSheet(opts.styleRoot)
   if (canUseHtmlCache) {
