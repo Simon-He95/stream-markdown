@@ -94,6 +94,32 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     expect(['full', 'incremental', 'noop']).toContain(results[0])
   })
 
+  it('isolates onResult errors from scheduled rendering', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const results: string[] = []
+    const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      onResult: (result: string) => {
+        results.push(result)
+        throw new Error('consumer callback failed')
+      },
+    })
+
+    updater.update('a')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(results).toEqual(['full'])
+    expect(container.querySelector('code')?.textContent).toBe('a')
+    expect(consoleError).toHaveBeenCalledTimes(1)
+
+    updater.dispose()
+    consoleError.mockRestore()
+  })
+
   it('continues processing after a synchronous requestIdleCallback', async () => {
     vi.resetModules()
 

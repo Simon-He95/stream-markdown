@@ -459,6 +459,17 @@ export interface TokenIncrementalUpdater {
   dispose: () => void
 }
 
+function callScheduledOnResult(onResult: TokenIncrementalOptions['onResult'], result: UpdateResult): void {
+  if (!onResult)
+    return
+  try {
+    onResult(result)
+  }
+  catch (error) {
+    console.error('stream-markdown scheduled token update onResult error', error)
+  }
+}
+
 export function createTokenIncrementalUpdater(
   container: HTMLElement | null | undefined,
   highlighter: Highlighter,
@@ -667,10 +678,6 @@ class TokenUpdateScheduler {
           task.code,
           task.tokenLines ? { ...task.opts, tokenLines: task.tokenLines } : task.opts,
         )
-        if (typeof task.estNodes === 'number')
-          nodesProcessed += task.estNodes
-        else
-          nodesProcessed += 50 // fallback conservative increment
       }
       catch {
         // On unexpected error, fall back to full replace and notify
@@ -701,12 +708,17 @@ class TokenUpdateScheduler {
             showLineNumbers: task.opts.showLineNumbers ?? false,
             startingLineNumber: task.opts.startingLineNumber ?? 1,
           }))
-          task.opts.onResult?.('full')
+          callScheduledOnResult(task.opts.onResult, 'full')
         }
         catch {
-          task.opts.onResult?.('noop')
+          callScheduledOnResult(task.opts.onResult, 'noop')
         }
       }
+
+      if (typeof task.estNodes === 'number')
+        nodesProcessed += task.estNodes
+      else
+        nodesProcessed += 50 // fallback conservative increment
 
       if (!this.byContainer.has(task.container))
         this.stopObserving(task.container)
@@ -777,6 +789,7 @@ export function createScheduledTokenIncrementalUpdater(
     pendingCode = null
     pendingTokenLines = undefined
 
+    const userOnResult = opts.onResult
     let taskId = -1
     let completedSynchronously = false
 
@@ -787,7 +800,7 @@ export function createScheduledTokenIncrementalUpdater(
         completedSynchronously = true
         if (scheduledTaskId === taskId)
           scheduledTaskId = null
-        opts.onResult?.(result)
+        callScheduledOnResult(userOnResult, result)
       },
     }
 

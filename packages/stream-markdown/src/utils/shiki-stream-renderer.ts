@@ -58,7 +58,10 @@ export function createShikiStreamRenderer(
   const ensureHighlighter = async () => {
     if (disposed)
       return
-    highlighter = await registerHighlight({ langs: options.langs, themes: options.themes as any })
+    const nextHighlighter = await registerHighlight({ langs: options.langs, themes: options.themes as any })
+    if (disposed)
+      return
+    highlighter = nextHighlighter
   }
 
   const ensureThemeLoaded = async (theme: string) => {
@@ -98,6 +101,8 @@ export function createShikiStreamRenderer(
 
   const reinitUpdater = () => {
     updater?.dispose()
+    if (disposed || !highlighter)
+      return
     updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
       lang: currentLang ?? 'plaintext',
       theme: currentTheme,
