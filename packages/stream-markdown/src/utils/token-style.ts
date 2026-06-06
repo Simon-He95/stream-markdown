@@ -16,6 +16,7 @@ function fontStyleToCss(style?: number): string {
 }
 
 const TOKEN_CLASS_CACHE = new Map<string, string>()
+const TOKEN_STYLE_BY_CLASS = new Map<string, string>()
 const TOKEN_STYLE_RULES: string[] = []
 let tokenStyleGeneration = 0
 type TokenStyleRoot = Document | ShadowRoot
@@ -116,6 +117,20 @@ export function getTokenStyleSignature(color?: string, fontStyle?: number): stri
   return tokenStyle(color, fontStyle)
 }
 
+function hashTokenStyle(style: string): string {
+  let h1 = 0x811C9DC5
+  let h2 = 0x1505
+
+  for (let i = 0; i < style.length; i++) {
+    const code = style.charCodeAt(i)
+    h1 ^= code
+    h1 = Math.imul(h1, 0x01000193)
+    h2 = Math.imul(h2, 33) ^ code
+  }
+
+  return `${(h1 >>> 0).toString(36)}-${(h2 >>> 0).toString(36)}`
+}
+
 function getTokenClassNameForStyle(style: string): string {
   if (!style)
     return ''
@@ -124,11 +139,27 @@ function getTokenClassNameForStyle(style: string): string {
   if (cached)
     return cached
 
-  const className = `smd-token-${TOKEN_CLASS_CACHE.size}`
-  TOKEN_CLASS_CACHE.set(style, className)
-  TOKEN_STYLE_RULES.push(`.${className}{${style}}`)
-  tokenStyleGeneration++
-  return className
+  const baseClassName = `smd-token-${hashTokenStyle(style)}`
+  let className = baseClassName
+  let suffix = 1
+
+  while (true) {
+    const existingStyle = TOKEN_STYLE_BY_CLASS.get(className)
+    if (!existingStyle) {
+      TOKEN_CLASS_CACHE.set(style, className)
+      TOKEN_STYLE_BY_CLASS.set(className, style)
+      TOKEN_STYLE_RULES.push(`.${className}{${style}}`)
+      tokenStyleGeneration++
+      return className
+    }
+
+    if (existingStyle === style) {
+      TOKEN_CLASS_CACHE.set(style, className)
+      return className
+    }
+
+    className = `${baseClassName}-${suffix++}`
+  }
 }
 
 export function getTokenClassName(color?: string, fontStyle?: number): string {
@@ -189,6 +220,14 @@ function appendStyleElement(root: TokenStyleRoot, styleElement: HTMLStyleElement
   root.appendChild(styleElement)
 }
 
+function isStyleElementMounted(root: TokenStyleRoot, styleElement: HTMLStyleElement): boolean {
+  if (styleElement.ownerDocument !== getRootDocument(root))
+    return false
+  if (isDocumentRoot(root))
+    return styleElement.getRootNode() === root
+  return styleElement.parentNode === root
+}
+
 export function ensureTokenStyleSheet(target?: Node | null): void {
   if (TOKEN_STYLE_RULES.length === 0)
     return
@@ -198,15 +237,10 @@ export function ensureTokenStyleSheet(target?: Node | null): void {
     return
 
   let state = TOKEN_STYLE_ROOTS.get(root)
-  if (!state || !state.element.isConnected || state.element.ownerDocument !== getRootDocument(root)) {
-    let styleElement = root.querySelector('style[data-stream-markdown-token-styles]') as HTMLStyleElement | null
-
-    if (!styleElement) {
-      styleElement = getRootDocument(root).createElement('style')
-      styleElement.dataset.streamMarkdownTokenStyles = ''
-      appendStyleElement(root, styleElement)
-    }
-
+  if (!state || !isStyleElementMounted(root, state.element)) {
+    const styleElement = getRootDocument(root).createElement('style')
+    styleElement.dataset.streamMarkdownTokenStyles = ''
+    appendStyleElement(root, styleElement)
     state = {
       element: styleElement,
       generation: -1,

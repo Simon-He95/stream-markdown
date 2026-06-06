@@ -49,13 +49,16 @@ export function renderCodeWithTokens(
   const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber = 1 } = opts
   const tokenStyleMode = typeof document === 'undefined' ? 'inline-token-style' : 'class-token-style'
   const cacheKey = `${tokenStyleMode}\u0001${lang}\u0001${theme}\u0001${preClass}\u0001${codeClass}\u0001${lineClass}\u0001${showLineNumbers ? 1 : 0}\u0001${startingLineNumber}\u0001${code}`
-  const cachedHtml = getCachedHtml(highlighter, cacheKey, {
-    htmlCache: opts.htmlCache,
-    htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
-  })
-  if (cachedHtml) {
-    ensureTokenStyleSheet(opts.styleRoot)
-    return cachedHtml
+  const canUseHtmlCache = opts.tokenLines == null
+  if (canUseHtmlCache) {
+    const cachedHtml = getCachedHtml(highlighter, cacheKey, {
+      htmlCache: opts.htmlCache,
+      htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
+    })
+    if (cachedHtml) {
+      ensureTokenStyleSheet(opts.styleRoot)
+      return cachedHtml
+    }
   }
 
   let lines: ThemedToken[][]
@@ -97,9 +100,11 @@ export function renderCodeWithTokens(
   const codeCls = codeClass ? ` class="${codeClass}"` : ''
   const html = `<pre class="${preClass}"${preStyle}><code${codeCls}>${lineHtml}</code></pre>`
   ensureTokenStyleSheet(opts.styleRoot)
-  setCachedHtml(highlighter, cacheKey, html, {
-    htmlCache: opts.htmlCache,
-    htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
-  })
+  if (canUseHtmlCache) {
+    setCachedHtml(highlighter, cacheKey, html, {
+      htmlCache: opts.htmlCache,
+      htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
+    })
+  }
   return html
 }

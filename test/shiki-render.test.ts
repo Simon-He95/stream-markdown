@@ -86,4 +86,25 @@ describe('renderCodeWithTokens', () => {
     expect(ssrHtml).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')
     expect(ssrHtml).not.toContain('class="smd-token-')
   })
+
+  it('does not reuse cached HTML when explicit token lines are provided', () => {
+    const opts = {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      htmlCache: true,
+    }
+
+    const redHtml = renderCodeWithTokens(coloredHl as any, 'const value = 1', {
+      ...opts,
+      tokenLines: [[{ content: 'const value = 1', color: '#ff0000' }]],
+    })
+    const blueHtml = renderCodeWithTokens(coloredHl as any, 'const value = 1', {
+      ...opts,
+      tokenLines: [[{ content: 'const value = 1', color: '#0000ff' }]],
+    })
+
+    expect(redHtml).toContain('color: #ff0000;')
+    expect(blueHtml).toContain('color: #0000ff;')
+    expect(blueHtml).not.toBe(redHtml)
+  })
 })

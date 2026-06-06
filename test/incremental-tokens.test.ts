@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTokenIncrementalUpdater, updateCodeTokensIncremental } from '../packages/stream-markdown/src/utils/incremental-tokens.js'
 import { renderCodeWithTokens } from '../packages/stream-markdown/src/utils/shiki-render.js'
 import { streamContent as tsMarkdown } from '../src/pages/markdown.js'
@@ -69,6 +69,43 @@ describe('updateCodeTokensIncremental', () => {
     expect(style).toContain('color: #ff0000;')
     expect(style).toContain('font-style: italic;')
     expect(style).toContain('font-weight: 600;')
+  })
+
+  it('generates deterministic token class names independent of allocation order', async () => {
+    vi.resetModules()
+    const first = await import('../packages/stream-markdown/src/utils/token-style.js')
+    const redFirst = first.getTokenClassName('#ff0000', 0)
+    const blueFirst = first.getTokenClassName('#0000ff', 0)
+
+    vi.resetModules()
+    const second = await import('../packages/stream-markdown/src/utils/token-style.js')
+    const blueSecond = second.getTokenClassName('#0000ff', 0)
+    const redSecond = second.getTokenClassName('#ff0000', 0)
+
+    expect(redSecond).toBe(redFirst)
+    expect(blueSecond).toBe(blueFirst)
+    expect(redFirst).not.toBe(blueFirst)
+  })
+
+  it('does not overwrite an existing token style element from another bundle instance', () => {
+    const foreignStyle = document.createElement('style')
+    foreignStyle.dataset.streamMarkdownTokenStyles = ''
+    foreignStyle.textContent = '.foreign-token{color: blue;}'
+    document.head.appendChild(foreignStyle)
+
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const styleEls = Array.from(
+      document.head.querySelectorAll('style[data-stream-markdown-token-styles]'),
+    )
+    const ownStyle = styleEls.find(el => el !== foreignStyle)
+
+    expect(styleEls).toHaveLength(2)
+    expect(foreignStyle.textContent).toBe('.foreign-token{color: blue;}')
+    expect(ownStyle?.textContent).toContain('color: #ff0000;')
   })
 
   it('rehydrates token style rules when cached HTML is reused', () => {
