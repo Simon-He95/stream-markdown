@@ -74,17 +74,23 @@ function runFrame() {
  */
 export function scheduleRenderJob(job: () => void, options?: { priority?: 'high' | 'normal' }) {
   const priority = options?.priority ?? 'normal'
-  if (priority === 'high')
-    queue.unshift(job)
-  else
-    queue.push(job)
-  ensureFrame()
   let cancelled = false
+  const wrappedJob = () => {
+    if (!cancelled)
+      job()
+  }
+
+  if (priority === 'high')
+    queue.unshift(wrappedJob)
+  else
+    queue.push(wrappedJob)
+
+  ensureFrame()
   return () => {
     if (cancelled)
       return
     cancelled = true
-    const idx = queue.indexOf(job)
+    const idx = queue.indexOf(wrappedJob)
     if (idx >= 0)
       queue.splice(idx, 1)
   }

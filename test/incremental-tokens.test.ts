@@ -247,6 +247,22 @@ describe('updateCodeTokensIncremental', () => {
     expect(html).not.toContain('class="smd-token-')
   })
 
+  it('uses class token mode when styleRoot is explicitly null', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      styleRoot: null,
+    })
+
+    expect(html).toContain('class="smd-token-')
+    expect(html).not.toContain('style="color: #ff0000;')
+
+    const styleEl = document.head.querySelector('style[data-stream-markdown-token-styles]')
+    expect(styleEl?.textContent).toContain('color: #ff0000;')
+    expect(styleEl?.textContent).toContain('font-style: italic;')
+    expect(styleEl?.textContent).toContain('font-weight: 600;')
+  })
+
   it('rehydrates token style rules when an updater skips identical code', () => {
     const updater = createTokenIncrementalUpdater(container, coloredHl as any, {
       lang: 'ts',

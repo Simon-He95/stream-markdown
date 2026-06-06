@@ -57,7 +57,8 @@ export function renderCodeWithTokens(
   opts: RenderOptions,
 ): string {
   const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber = 1 } = opts
-  const requestedTokenStyleMode: TokenStyleMode = opts.tokenStyleMode ?? (opts.styleRoot != null ? 'class' : 'inline')
+  const hasExplicitStyleRoot = opts.styleRoot !== undefined
+  const requestedTokenStyleMode: TokenStyleMode = opts.tokenStyleMode ?? (hasExplicitStyleRoot ? 'class' : 'inline')
   const tokenStyleMode: TokenStyleMode = requestedTokenStyleMode === 'class' && typeof document !== 'undefined'
     ? 'class'
     : 'inline'
