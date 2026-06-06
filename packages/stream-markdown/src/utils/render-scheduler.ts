@@ -86,8 +86,14 @@ function ensureFrame() {
   if (paused)
     return
   const scheduler = getFrameScheduler()
-  cancelScheduledFrame = scheduler.cancel
-  rafId = scheduler.request(runFrame)
+  try {
+    cancelScheduledFrame = scheduler.cancel
+    rafId = scheduler.request(runFrame)
+  }
+  catch {
+    rafId = setTimeout(runFrame, 16)
+    cancelScheduledFrame = id => clearTimeout(id)
+  }
 }
 
 function runFrame() {

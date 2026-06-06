@@ -226,6 +226,25 @@ describe('updateCodeTokensIncremental', () => {
     expect(styleEl?.textContent).toContain('color: #ff0000;')
   })
 
+  it('repairs a mounted token style element whose text was externally cleared', () => {
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const styleEl = document.head.querySelector('style[data-stream-markdown-token-styles]') as HTMLStyleElement
+    expect(styleEl.textContent).toContain('color: #ff0000;')
+
+    styleEl.textContent = ''
+
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(styleEl.textContent).toContain('color: #ff0000;')
+  })
+
   it('keeps renderCodeWithTokens self-contained by default in a DOM environment', () => {
     const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
       lang: 'ts',

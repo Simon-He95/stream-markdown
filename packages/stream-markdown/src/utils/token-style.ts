@@ -294,9 +294,10 @@ export function ensureTokenStyleSheet(target?: Node | null): void {
     TOKEN_STYLE_ROOTS.set(root, state)
   }
 
-  if (state.generation === tokenStyleGeneration)
+  const sheetText = getTokenStyleSheetText()
+  if (state.generation === tokenStyleGeneration && state.element.textContent === sheetText)
     return
 
-  state.element.textContent = getTokenStyleSheetText()
+  state.element.textContent = sheetText
   state.generation = tokenStyleGeneration
 }

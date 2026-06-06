@@ -113,4 +113,48 @@ describe('render scheduler', () => {
         (window as any).cancelAnimationFrame = origWindowCancelRaf
     }
   })
+
+  it('falls back to setTimeout when requestAnimationFrame throws', async () => {
+    const origGlobalRaf = (globalThis as any).requestAnimationFrame
+    const origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame
+    const origWindowRaf = (window as any).requestAnimationFrame
+    const origWindowCancelRaf = (window as any).cancelAnimationFrame
+
+    try {
+      ;(globalThis as any).requestAnimationFrame = () => {
+        throw new Error('closed frame')
+      }
+      ;(globalThis as any).cancelAnimationFrame = vi.fn()
+      ;(window as any).requestAnimationFrame = (globalThis as any).requestAnimationFrame
+      ;(window as any).cancelAnimationFrame = vi.fn()
+
+      resume()
+      const order: string[] = []
+      scheduleRenderJob(() => order.push('run'))
+      await new Promise(resolve => setTimeout(resolve, 25))
+
+      expect(order).toEqual(['run'])
+    }
+    finally {
+      if (origGlobalRaf === undefined)
+        delete (globalThis as any).requestAnimationFrame
+      else
+        (globalThis as any).requestAnimationFrame = origGlobalRaf
+
+      if (origGlobalCancelRaf === undefined)
+        delete (globalThis as any).cancelAnimationFrame
+      else
+        (globalThis as any).cancelAnimationFrame = origGlobalCancelRaf
+
+      if (origWindowRaf === undefined)
+        delete (window as any).requestAnimationFrame
+      else
+        (window as any).requestAnimationFrame = origWindowRaf
+
+      if (origWindowCancelRaf === undefined)
+        delete (window as any).cancelAnimationFrame
+      else
+        (window as any).cancelAnimationFrame = origWindowCancelRaf
+    }
+  })
 })

@@ -629,14 +629,22 @@ class TokenUpdateScheduler {
     const ric = ricOwner?.requestIdleCallback
 
     this.idleScheduled = true
+    let ranSynchronously = false
     const run = (deadline: any) => {
+      ranSynchronously = true
       this.idleScheduled = false
       this.process(deadline)
     }
 
     if (ric) {
-      ric.call(ricOwner, run)
-      return
+      try {
+        ric.call(ricOwner, run)
+        return
+      }
+      catch {
+        if (ranSynchronously)
+          return
+      }
     }
 
     setTimeout(() => run({ timeRemaining: () => 50, didTimeout: true }), 50)
