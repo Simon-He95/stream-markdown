@@ -103,6 +103,7 @@ describe('createShikiStreamCachedRenderer', () => {
     })
 
     await renderer.updateCode('first\nsecond')
+    await new Promise(r => setTimeout(r, 0))
 
     const lines = container.querySelectorAll('code .line')
     expect(lines).toHaveLength(2)

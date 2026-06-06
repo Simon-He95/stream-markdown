@@ -1,6 +1,6 @@
 import type { TokenIncrementalUpdater } from './incremental-tokens.js'
 import { registerHighlight } from './highlight.js'
-import { createScheduledTokenIncrementalUpdater, createTokenIncrementalUpdater } from './incremental-tokens.js'
+import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
 import { observeElement } from './shared-intersection-observer.js'
 
@@ -98,11 +98,7 @@ export function createShikiStreamRenderer(
 
   const reinitUpdater = () => {
     updater?.dispose()
-    const createUpdater = useRaf
-      ? createScheduledTokenIncrementalUpdater
-      : createTokenIncrementalUpdater
-
-    updater = createUpdater(container, highlighter, {
+    updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
       lang: currentLang ?? 'plaintext',
       theme: currentTheme,
       appendOnlyFastPath: options.appendOnlyFastPath,

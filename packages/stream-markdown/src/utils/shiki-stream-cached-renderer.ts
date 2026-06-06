@@ -3,7 +3,7 @@ import type { ThemedToken } from './shiki-render.js'
 import type { ShikiStreamRendererOptions } from './shiki-stream-renderer.js'
 import { ShikiStreamTokenizer } from 'shiki-stream'
 import { registerHighlight } from './highlight.js'
-import { createScheduledTokenIncrementalUpdater, createTokenIncrementalUpdater } from './incremental-tokens.js'
+import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
 import { observeElement } from './shared-intersection-observer.js'
 
@@ -141,11 +141,7 @@ export function createShikiStreamCachedRenderer(
     if (!highlighter)
       return
 
-    const createUpdater = useRaf
-      ? createScheduledTokenIncrementalUpdater
-      : createTokenIncrementalUpdater
-
-    updater = createUpdater(container, highlighter, {
+    updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
       lang: currentLang ?? 'plaintext',
       theme: currentTheme,
       appendOnlyFastPath: options.appendOnlyFastPath,

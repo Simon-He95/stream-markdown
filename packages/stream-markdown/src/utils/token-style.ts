@@ -259,6 +259,10 @@ function isStyleElementMounted(root: TokenStyleRoot, styleElement: HTMLStyleElem
   return styleElement.parentNode === root
 }
 
+function getTokenStyleSheetText(): string {
+  return TOKEN_STYLE_RULES.join('\n')
+}
+
 export function ensureTokenStyleSheet(target?: Node | null): void {
   if (TOKEN_STYLE_RULES.length === 0)
     return
@@ -279,8 +283,10 @@ export function ensureTokenStyleSheet(target?: Node | null): void {
     TOKEN_STYLE_ROOTS.set(root, state)
   }
 
-  if (state.generation !== tokenStyleGeneration) {
-    state.element.textContent = TOKEN_STYLE_RULES.join('\n')
+  const cssText = getTokenStyleSheetText()
+
+  if (state.generation !== tokenStyleGeneration || state.element.textContent !== cssText) {
+    state.element.textContent = cssText
     state.generation = tokenStyleGeneration
   }
 }
