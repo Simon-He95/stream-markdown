@@ -12,6 +12,16 @@ const coloredHl = {
   },
 }
 
+const unsetFontStyleHl = {
+  codeToThemedTokens(code: string) {
+    return code.split('\n').map(line => [{
+      content: line,
+      color: '#ff0000',
+      fontStyle: -1,
+    }])
+  },
+}
+
 const maliciousBgHl = {
   codeToThemedTokens(code: string) {
     return code.split('\n').map(line => [{
@@ -59,6 +69,18 @@ function createDocumentStub() {
 }
 
 describe('renderCodeWithTokens', () => {
+  it('does not treat negative token fontStyle as all styles', () => {
+    const html = renderCodeWithTokens(unsetFontStyleHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(html).toContain('style="color: #ff0000;"')
+    expect(html).not.toContain('font-style: italic;')
+    expect(html).not.toContain('font-weight: 600;')
+    expect(html).not.toContain('text-decoration: underline;')
+  })
+
   it('uses inline token styles when rendering without a DOM', () => {
     const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
       lang: 'ts',

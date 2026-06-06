@@ -203,8 +203,11 @@ export function createShikiStreamCachedRenderer(
     const langChanged = nextLang !== currentLang
     const codeChanged = code !== currentCode
 
-    if (!codeChanged && !langChanged)
+    if (!codeChanged && !langChanged) {
+      if (updater && tokenBuffer.length > 0)
+        scheduleRender(code, tokensToLines(tokenBuffer))
       return
+    }
 
     const prevCode = currentCode
     currentCode = code

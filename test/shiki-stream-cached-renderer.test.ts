@@ -52,6 +52,44 @@ describe('createShikiStreamCachedRenderer', () => {
     renderer.dispose()
   })
 
+  it('rehydrates token styles when the same cached code is updated again', async () => {
+    shikiStreamMock.enqueueResults.push({
+      recall: 0,
+      stable: [{
+        content: 'const a = 1',
+        color: '#ff0000',
+        fontStyle: 0,
+      }],
+      unstable: [],
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+    })
+
+    await renderer.updateCode('const a = 1')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+      .toContain('color: #ff0000;')
+
+    document.head.innerHTML = ''
+
+    await renderer.updateCode('const a = 1')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+      .toContain('color: #ff0000;')
+
+    renderer.dispose()
+  })
+
   it('passes render options to the cached scheduled token updater', async () => {
     shikiStreamMock.enqueueResults.push({
       recall: 0,

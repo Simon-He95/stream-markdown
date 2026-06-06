@@ -1,11 +1,11 @@
 export type TokenStyleMode = 'inline' | 'class'
 
-const CSS_COLOR_FUNCTION_RE = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\([\w\s.,%/+~-]+\)$/i
+const CSS_COLOR_FUNCTION_RE = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\([\w\s.,%/+~#-]+\)$/i
 const CSS_VAR_NAME_RE = /^--[\w-]+$/
 const CSS_VAR_FALLBACK_RE = /^[\w\s#.,%()+/~-]+$/
 
 function fontStyleToCss(style?: number): string {
-  if (!style || style === 0)
+  if (style == null || !Number.isFinite(style) || style <= 0)
     return ''
   const parts: string[] = []
   if (style & 1)

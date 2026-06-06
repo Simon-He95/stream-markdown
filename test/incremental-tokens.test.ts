@@ -377,6 +377,10 @@ describe('updateCodeTokensIncremental', () => {
     try {
       expect(normalizeCssColor('color-mix(in srgb, red, blue)'))
         .toBe('color-mix(in srgb, red, blue)')
+      expect(normalizeCssColor('color-mix(in srgb, #ff0000 50%, #0000ff)'))
+        .toBe('color-mix(in srgb, #ff0000 50%, #0000ff)')
+      expect(normalizeCssColor('light-dark(#fff, #000)'))
+        .toBe('light-dark(#fff, #000)')
       expect(normalizeCssColor('#ff0000;}body{display:none'))
         .toBe('')
       expect(normalizeCssColor('rgb(255, 0, 0)'))
