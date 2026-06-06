@@ -369,9 +369,9 @@ describe('updateCodeTokensIncremental', () => {
 
   it('does not let reentrant onResult leave stale append-only state', () => {
     let reentered = false
-    let updater!: ReturnType<typeof createTokenIncrementalUpdater>
+    const updaterRef = {} as { current: ReturnType<typeof createTokenIncrementalUpdater> }
 
-    updater = createTokenIncrementalUpdater(container, hl as any, {
+    const updater = createTokenIncrementalUpdater(container, hl as any, {
       lang: 'ts',
       theme: 'vitesse-dark',
       appendOnlyFastPath: true,
@@ -380,9 +380,10 @@ describe('updateCodeTokensIncremental', () => {
           return
 
         reentered = true
-        updater.update('x\nb')
+        updaterRef.current.update('x\nb')
       },
     })
+    updaterRef.current = updater
 
     updater.update('a\nb')
 
@@ -391,6 +392,45 @@ describe('updateCodeTokensIncremental', () => {
     updater.update('a\nbc')
 
     expect(container.querySelector('code')?.textContent).toBe('a\nbc')
+    updater.dispose()
+  })
+
+  it('keeps skip-same fast path state after reentrant updater updates', () => {
+    let tokenizationCount = 0
+    const countedHl = {
+      codeToThemedTokens(code: string) {
+        tokenizationCount++
+        return code.split('\n').map(line => [{
+          content: line,
+          color: '#ff0000',
+          fontStyle: 0,
+        }])
+      },
+    }
+
+    let reentered = false
+    const updaterRef = {} as { current: ReturnType<typeof createTokenIncrementalUpdater> }
+
+    const updater = createTokenIncrementalUpdater(container, countedHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      onResult: () => {
+        if (reentered)
+          return
+
+        reentered = true
+        updaterRef.current.update('inner')
+      },
+    })
+    updaterRef.current = updater
+
+    updater.update('outer')
+    expect(container.querySelector('code')?.textContent).toBe('inner')
+    expect(tokenizationCount).toBe(2)
+
+    expect(updater.update('inner')).toBe('noop')
+    expect(tokenizationCount).toBe(2)
+
     updater.dispose()
   })
 

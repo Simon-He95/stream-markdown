@@ -474,6 +474,7 @@ export function createTokenIncrementalUpdater(
   let alive = true
   let target: HTMLElement | null | undefined = container
   let lastCode: string | null = null
+  let updateSeq = 0
 
   return {
     update: (code: string, tokenLines?: ThemedToken[][]) => {
@@ -504,9 +505,14 @@ export function createTokenIncrementalUpdater(
           return 'noop'
         }
       }
+      // `opts.onResult` may synchronously re-enter `update()` from inside
+      // `updateCodeTokensIncremental`. Do not let the outer call overwrite the
+      // newer `lastCode` written by the nested update.
+      const seq = ++updateSeq
       const nextOpts = tokenLines ? { ...opts, tokenLines } : opts
       const res = updateCodeTokensIncremental(target, highlighter, code, nextOpts)
-      lastCode = code
+      if (seq === updateSeq)
+        lastCode = code
       return res
     },
     reset: () => {
@@ -515,12 +521,14 @@ export function createTokenIncrementalUpdater(
       target.innerHTML = ''
       clearContainerRenderState(target)
       lastCode = null
+      updateSeq++
     },
     cancel: () => {},
     dispose: () => {
       alive = false
       target = null
       lastCode = null
+      updateSeq++
     },
   }
 }
