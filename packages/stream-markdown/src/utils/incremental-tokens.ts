@@ -427,6 +427,7 @@ export function updateCodeTokensIncremental(
 export interface TokenIncrementalUpdater {
   update: (code: string, tokenLines?: ThemedToken[][]) => UpdateResult
   reset: () => void
+  cancel?: () => void
   dispose: () => void
 }
 
@@ -465,6 +466,7 @@ export function createTokenIncrementalUpdater(
       target.innerHTML = ''
       lastCode = null
     },
+    cancel: () => {},
     dispose: () => {
       alive = false
       target = null
@@ -696,6 +698,16 @@ export function createScheduledTokenIncrementalUpdater(
     scheduledTaskId = null
   }
 
+  const cancelPendingWork = () => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    pendingCode = null
+    pendingTokenLines = undefined
+    cancelScheduledTask()
+  }
+
   const flush = () => {
     timer = null
     if (!alive || !container || pendingCode == null)
@@ -753,24 +765,13 @@ export function createScheduledTokenIncrementalUpdater(
     reset: () => {
       if (!alive || !container)
         return
-      if (timer) {
-        clearTimeout(timer)
-        timer = null
-      }
-      pendingCode = null
-      pendingTokenLines = undefined
-      cancelScheduledTask()
+      cancelPendingWork()
       container.innerHTML = ''
     },
+    cancel: cancelPendingWork,
     dispose: () => {
       alive = false
-      if (timer) {
-        clearTimeout(timer)
-        timer = null
-      }
-      pendingCode = null
-      pendingTokenLines = undefined
-      cancelScheduledTask()
+      cancelPendingWork()
       // leave container as-is; caller may remove
     },
   }

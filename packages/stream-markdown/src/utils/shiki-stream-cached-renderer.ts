@@ -124,6 +124,7 @@ export function createShikiStreamCachedRenderer(
     }
     scheduled = false
     pendingRender = null
+    updater?.cancel?.()
   }
 
   if (typeof window !== 'undefined' && container) {
@@ -193,6 +194,8 @@ export function createShikiStreamCachedRenderer(
     const prevCode = currentCode
     currentCode = code
 
+    cancelPendingRender()
+
     if (!highlighter || langChanged) {
       currentLang = nextLang
       await ensureHighlighter()
@@ -241,6 +244,7 @@ export function createShikiStreamCachedRenderer(
     await ensureThemeLoaded(theme)
     if (disposed)
       return
+    cancelPendingRender()
     currentTheme = theme
     tokenizer?.clear()
     tokenizer = null

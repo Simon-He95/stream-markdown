@@ -112,7 +112,7 @@ describe('createShikiStreamCachedRenderer', () => {
     renderer.dispose()
   })
 
-  it('renders pending token lines with their matching code snapshot', async () => {
+  it('cancels stale pending token renders when a newer cached update starts', async () => {
     const origRaf = (globalThis as any).requestAnimationFrame
     const origCancelRaf = (globalThis as any).cancelAnimationFrame
     const rafCallbacks: FrameRequestCallback[] = []
@@ -141,18 +141,17 @@ describe('createShikiStreamCachedRenderer', () => {
 
       await renderer.updateCode('first')
 
-      const secondUpdate = renderer.updateCode('second\nline')
+      const secondUpdate = renderer.updateCode('second')
       await Promise.resolve()
 
       rafCallbacks.shift()?.(performance.now())
       await new Promise(r => setTimeout(r, 0))
 
-      expect(container.querySelectorAll('code .line')).toHaveLength(1)
-      expect(container.querySelector('code')?.textContent).toBe('first')
+      expect(container.querySelector('code')).toBeNull()
 
       resolveSecond({
         recall: 0,
-        stable: [{ content: 'second' }, { content: '\n' }, { content: 'line' }],
+        stable: [{ content: 'second' }],
         unstable: [],
       })
       await secondUpdate
@@ -160,8 +159,7 @@ describe('createShikiStreamCachedRenderer', () => {
       rafCallbacks.shift()?.(performance.now())
       await new Promise(r => setTimeout(r, 0))
 
-      expect(container.querySelectorAll('code .line')).toHaveLength(2)
-      expect(container.querySelector('code')?.textContent).toBe('second\nline')
+      expect(container.querySelector('code')?.textContent).toBe('second')
 
       renderer.dispose()
     }
