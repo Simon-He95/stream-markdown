@@ -95,7 +95,6 @@ function createLineElement(
   lineNumber: number | undefined,
   lineClass: string,
   ownerDocument: Document,
-  styleRoot: Node | null,
   signature?: string,
 ): HTMLSpanElement {
   const span = ownerDocument.createElement('span')
@@ -135,11 +134,10 @@ function createLineElement(
     span.appendChild(tspan)
   }
 
-  ensureTokenStyleSheet(styleRoot)
   return span
 }
 
-export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' | 'codeClass' | 'lineClass'> {
+export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' | 'codeClass' | 'lineClass' | 'tokenStyleMode'> {
   preClass?: string
   codeClass?: string
   lineClass?: string
@@ -259,7 +257,7 @@ export function updateCodeTokensIncremental(
       const sig = compareMode === 'signature'
         ? lineSignature(tokenLines[lastIdx], showLineNumbers, lineNumber)
         : undefined
-      const newLineEl = createLineElement(tokenLines[lastIdx], showLineNumbers, lineNumber, lineClass, ownerDocument, styleRoot, sig)
+      const newLineEl = createLineElement(tokenLines[lastIdx], showLineNumbers, lineNumber, lineClass, ownerDocument, sig)
       oldLines[lastIdx].innerHTML = ''
       while (newLineEl.firstChild)
         oldLines[lastIdx].appendChild(newLineEl.firstChild)
@@ -275,12 +273,13 @@ export function updateCodeTokensIncremental(
           const sig = compareMode === 'signature'
             ? lineSignature(tokenLines[j], showLineNumbers, lineNumber)
             : undefined
-          const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, ownerDocument, styleRoot, sig)
+          const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, ownerDocument, sig)
           frag.appendChild(span)
           ln++
         }
         codeEl.appendChild(frag)
       }
+      ensureTokenStyleSheet(styleRoot)
       opts.onResult?.('incremental')
       LAST_CODE.set(container, code)
       return 'incremental'
@@ -332,11 +331,12 @@ export function updateCodeTokensIncremental(
         frag.appendChild(ownerDocument.createTextNode('\n'))
         const lineNumber = showLineNumbers ? ln : undefined
         const sig = compareMode === 'signature' ? lineSignature(tokenLines[j], showLineNumbers, lineNumber) : undefined
-        const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, ownerDocument, styleRoot, sig)
+        const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, ownerDocument, sig)
         frag.appendChild(span)
         ln++
       }
       codeEl.appendChild(frag)
+      ensureTokenStyleSheet(styleRoot)
       opts.onResult?.('incremental')
       LAST_CODE.set(container, code)
       return 'incremental'
@@ -374,7 +374,7 @@ export function updateCodeTokensIncremental(
   if (divergeAt >= oldLen - 1) {
     const lineNumber = showLineNumbers ? (startingLineNumber + divergeAt) : undefined
     const sig = compareMode === 'signature' ? lineSignature(tokenLines[divergeAt], showLineNumbers, lineNumber) : undefined
-    const newLineEl = createLineElement(tokenLines[divergeAt], showLineNumbers, lineNumber, lineClass, ownerDocument, styleRoot, sig)
+    const newLineEl = createLineElement(tokenLines[divergeAt], showLineNumbers, lineNumber, lineClass, ownerDocument, sig)
     // Replace children of the existing line element with the newly built nodes
     oldLines[divergeAt].innerHTML = ''
     while (newLineEl.firstChild)
@@ -390,12 +390,13 @@ export function updateCodeTokensIncremental(
         frag.appendChild(ownerDocument.createTextNode('\n'))
         const lineNumber = showLineNumbers ? ln : undefined
         const sig = compareMode === 'signature' ? lineSignature(tokenLines[j], showLineNumbers, lineNumber) : undefined
-        const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, ownerDocument, styleRoot, sig)
+        const span = createLineElement(tokenLines[j], showLineNumbers, lineNumber, lineClass, ownerDocument, sig)
         frag.appendChild(span)
         ln++
       }
       codeEl.appendChild(frag)
     }
+    ensureTokenStyleSheet(styleRoot)
     opts.onResult?.('incremental')
     LAST_CODE.set(container, code)
     return 'incremental'
@@ -535,8 +536,12 @@ class TokenUpdateScheduler {
     }
     this.queue.push(task)
     this.byContainer.set(container, task)
-    if (this.io)
-      this.io.observe(container)
+    if (this.io) {
+      try {
+        this.io.observe(container)
+      }
+      catch {}
+    }
 
     this.ensureProcessing()
     return task.id
@@ -546,15 +551,22 @@ class TokenUpdateScheduler {
     if (this.handle != null)
       return
 
-    const ric = (window as any).requestIdleCallback || function (cb: any) {
-      return setTimeout(() => cb({ timeRemaining: () => 50, didTimeout: true }), 50)
-    }
-    this.handle = ric((deadline: any) => this.process(deadline))
+    const win = this.queue[0]?.container.ownerDocument?.defaultView as any
+    const ric = win?.requestIdleCallback
+      ?? (globalThis as any).requestIdleCallback
+      ?? function (cb: any) {
+        return setTimeout(() => cb({ timeRemaining: () => 50, didTimeout: true }), 50)
+      }
+    this.handle = ric.call(win ?? globalThis, (deadline: any) => this.process(deadline))
   }
 
   private stopObserving(container: HTMLElement) {
-    if (this.io)
-      this.io.unobserve(container)
+    if (this.io) {
+      try {
+        this.io.unobserve(container)
+      }
+      catch {}
+    }
     this.visible.delete(container)
   }
 

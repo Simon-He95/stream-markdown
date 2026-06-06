@@ -2,7 +2,7 @@ import type { Highlighter } from 'shiki'
 import type { TokenStyleMode } from './token-style.js'
 import { getCachedHtml, setCachedHtml } from './html-cache.js'
 import { getTokenLines } from './token-cache.js'
-import { ensureTokenStyleSheet, getTokenStyleAttr } from './token-style.js'
+import { ensureTokenStyleSheet, getTokenStyleAttr, normalizeCssColor } from './token-style.js'
 
 export interface RenderOptions {
   lang: string
@@ -41,6 +41,12 @@ function escapeHtml(str: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+}
+
+function escapeAttr(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
 }
 
 export function renderCodeWithTokens(
@@ -128,7 +134,8 @@ export function renderCodeWithTokens(
     return `<span class="${lineClass}">${ln}${tokensHtml}</span>`
   }).join('\n')
 
-  const preStyle = bg ? ` style="background-color: ${bg};"` : ''
+  const safeBg = normalizeCssColor(bg)
+  const preStyle = safeBg ? ` style="background-color: ${escapeAttr(safeBg)};"` : ''
   const codeCls = codeClass ? ` class="${codeClass}"` : ''
   const html = `<pre class="${preClass}"${preStyle}><code${codeCls}>${lineHtml}</code></pre>`
   if (tokenStyleMode === 'class')

@@ -12,6 +12,19 @@ const coloredHl = {
   },
 }
 
+const maliciousBgHl = {
+  codeToThemedTokens(code: string) {
+    return code.split('\n').map(line => [{
+      content: line,
+      color: '#ff0000',
+      fontStyle: 0,
+    }])
+  },
+  getTheme() {
+    return { bg: '#fff;color:transparent;position:fixed' }
+  },
+}
+
 function createDocumentStub() {
   let styleElement: any = null
   const doc: any = {
@@ -108,5 +121,15 @@ describe('renderCodeWithTokens', () => {
     expect(redHtml).toContain('color: #ff0000;')
     expect(blueHtml).toContain('color: #0000ff;')
     expect(blueHtml).not.toBe(redHtml)
+  })
+
+  it('does not inject arbitrary CSS from theme background colors', () => {
+    const html = renderCodeWithTokens(maliciousBgHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(html).not.toContain('color:transparent')
+    expect(html).not.toContain('position:fixed')
   })
 })

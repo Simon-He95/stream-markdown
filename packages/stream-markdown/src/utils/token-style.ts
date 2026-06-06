@@ -92,7 +92,7 @@ function isValidDomColor(value: string): boolean {
   return colorProbe.style.color !== ''
 }
 
-function normalizeColor(color?: string): string {
+export function normalizeCssColor(color?: string): string {
   const value = color?.trim()
   if (!value || !isSafeCssColorSyntax(value))
     return ''
@@ -104,7 +104,7 @@ function normalizeColor(color?: string): string {
 }
 
 function tokenStyle(color?: string, fontStyle?: number): string {
-  const normalizedColor = normalizeColor(color)
+  const normalizedColor = normalizeCssColor(color)
   const colorCss = normalizedColor ? `color: ${normalizedColor};` : ''
   return `${colorCss}${fontStyleToCss(fontStyle)}`
 }
