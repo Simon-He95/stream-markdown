@@ -94,6 +94,44 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     expect(['full', 'incremental', 'noop']).toContain(results[0])
   })
 
+  it('continues processing after a synchronous requestIdleCallback', async () => {
+    vi.resetModules()
+
+    const origGlobalRIC = (globalThis as any).requestIdleCallback
+    const origWindowRIC = (window as any).requestIdleCallback
+    const syncRic = (cb: IdleRequestCallback) => {
+      cb({ timeRemaining: () => 999, didTimeout: true } as IdleDeadline)
+      return 1
+    }
+
+    ;(globalThis as any).requestIdleCallback = syncRic
+    ;(window as any).requestIdleCallback = syncRic
+
+    try {
+      const { createScheduledTokenIncrementalUpdater } = await import('../packages/stream-markdown/src/utils/incremental-tokens.js')
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+
+      const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+      })
+
+      updater.update('first')
+      expect(container.querySelector('code')?.textContent).toBe('first')
+
+      updater.update('second')
+      expect(container.querySelector('code')?.textContent).toBe('second')
+
+      updater.dispose()
+    }
+    finally {
+      ;(globalThis as any).requestIdleCallback = origGlobalRIC
+      ;(window as any).requestIdleCallback = origWindowRIC
+      vi.resetModules()
+    }
+  })
+
   it('deduplicates multiple updates for the same container, only last applied', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

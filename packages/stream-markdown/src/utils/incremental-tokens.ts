@@ -6,6 +6,7 @@ import { ensureTokenStyleSheet, getTokenClassName, getTokenStyleAttr, getTokenSt
 
 export type UpdateResult = 'incremental' | 'full' | 'noop'
 
+const RENDER_SIGNATURES = new WeakMap<HTMLElement, string>()
 const LINE_SIGNATURES = new WeakMap<HTMLElement, string>()
 const LAST_CODE = new WeakMap<HTMLElement, string>()
 
@@ -29,6 +30,36 @@ function escapeHtml(str: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+}
+
+function renderSignature(options: {
+  lang: string
+  theme: string
+  preClass: string
+  codeClass: string
+  lineClass: string
+  showLineNumbers: boolean
+  startingLineNumber: number
+}): string {
+  return [
+    options.lang,
+    options.theme,
+    options.preClass,
+    options.codeClass,
+    options.lineClass,
+    options.showLineNumbers ? '1' : '0',
+    String(options.startingLineNumber),
+  ].join('\u0001')
+}
+
+function clearContainerRenderState(container: HTMLElement): void {
+  LAST_CODE.delete(container)
+  RENDER_SIGNATURES.delete(container)
+}
+
+function setContainerRenderState(container: HTMLElement, code: string, signature: string): void {
+  LAST_CODE.set(container, code)
+  RENDER_SIGNATURES.set(container, signature)
 }
 
 function lineInnerHtml(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber?: number): string {
@@ -196,12 +227,17 @@ export function updateCodeTokensIncremental(
   const compareMode = opts.compareMode ?? 'signature'
   const ownerDocument = container.ownerDocument
   const styleRoot = opts.styleRoot ?? container
+  const signature = renderSignature({
+    lang,
+    theme,
+    preClass,
+    codeClass,
+    lineClass,
+    showLineNumbers,
+    startingLineNumber,
+  })
 
-  // Ensure initial structure
-  const codeEl = container.querySelector('code') as HTMLElement | null
-  if (codeEl)
-    ensureTokenStyleSheet(styleRoot)
-  if (!codeEl) {
+  const renderFull = (): UpdateResult => {
     container.innerHTML = renderCodeWithTokens(highlighter, code, {
       lang,
       theme,
@@ -219,9 +255,22 @@ export function updateCodeTokensIncremental(
       tokenStyleMode: 'class',
     })
     opts.onResult?.('full')
-    LAST_CODE.set(container, code)
+    setContainerRenderState(container, code, signature)
     return 'full'
   }
+
+  // Ensure initial structure
+  const codeEl = container.querySelector('code') as HTMLElement | null
+  if (codeEl)
+    ensureTokenStyleSheet(styleRoot)
+  if (!codeEl)
+    return renderFull()
+
+  const previousSignature = RENDER_SIGNATURES.get(container)
+  if (previousSignature && previousSignature !== signature)
+    return renderFull()
+  if (!previousSignature)
+    RENDER_SIGNATURES.set(container, signature)
 
   const oldLines = codeEl.getElementsByClassName(lineClass) as HTMLCollectionOf<HTMLElement>
   let tokenLines = providedTokenLines
@@ -281,7 +330,7 @@ export function updateCodeTokensIncremental(
       }
       ensureTokenStyleSheet(styleRoot)
       opts.onResult?.('incremental')
-      LAST_CODE.set(container, code)
+      setContainerRenderState(container, code, signature)
       return 'incremental'
     }
   }
@@ -338,35 +387,16 @@ export function updateCodeTokensIncremental(
       codeEl.appendChild(frag)
       ensureTokenStyleSheet(styleRoot)
       opts.onResult?.('incremental')
-      LAST_CODE.set(container, code)
+      setContainerRenderState(container, code, signature)
       return 'incremental'
     }
 
-    if (newLen < oldLen) {
-      container.innerHTML = renderCodeWithTokens(highlighter, code, {
-        lang,
-        theme,
-        preClass,
-        codeClass,
-        lineClass,
-        showLineNumbers,
-        startingLineNumber,
-        tokenCache: opts.tokenCache,
-        tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
-        htmlCache: opts.htmlCache,
-        htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
-        tokenLines: providedTokenLines,
-        styleRoot,
-        tokenStyleMode: 'class',
-      })
-      opts.onResult?.('full')
-      LAST_CODE.set(container, code)
-      return 'full'
-    }
+    if (newLen < oldLen)
+      return renderFull()
 
     ensureTokenStyleSheet(styleRoot)
     opts.onResult?.('noop')
-    LAST_CODE.set(container, code)
+    setContainerRenderState(container, code, signature)
     return 'noop'
   }
 
@@ -398,30 +428,12 @@ export function updateCodeTokensIncremental(
     }
     ensureTokenStyleSheet(styleRoot)
     opts.onResult?.('incremental')
-    LAST_CODE.set(container, code)
+    setContainerRenderState(container, code, signature)
     return 'incremental'
   }
 
   // Divergence earlier -> full replace for correctness
-  container.innerHTML = renderCodeWithTokens(highlighter, code, {
-    lang,
-    theme,
-    preClass,
-    codeClass,
-    lineClass,
-    showLineNumbers,
-    startingLineNumber,
-    tokenCache: opts.tokenCache,
-    tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
-    htmlCache: opts.htmlCache,
-    htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
-    tokenLines: providedTokenLines,
-    styleRoot,
-    tokenStyleMode: 'class',
-  })
-  opts.onResult?.('full')
-  LAST_CODE.set(container, code)
-  return 'full'
+  return renderFull()
 }
 
 export interface TokenIncrementalUpdater {
@@ -464,6 +476,7 @@ export function createTokenIncrementalUpdater(
       if (!alive || !target)
         return
       target.innerHTML = ''
+      clearContainerRenderState(target)
       lastCode = null
     },
     cancel: () => {},
@@ -499,7 +512,7 @@ class TokenUpdateScheduler {
   private byContainer = new WeakMap<HTMLElement, ScheduledTask>()
   private visible = new WeakMap<HTMLElement, boolean>()
   private io: IntersectionObserver | null = null
-  private handle: any = null
+  private idleScheduled = false
   private nextId = 1
 
   constructor() {
@@ -550,7 +563,7 @@ class TokenUpdateScheduler {
   }
 
   private ensureProcessing() {
-    if (this.handle != null)
+    if (this.idleScheduled)
       return
 
     const win = this.queue[0]?.container.ownerDocument?.defaultView as any
@@ -559,7 +572,13 @@ class TokenUpdateScheduler {
       ?? function (cb: any) {
         return setTimeout(() => cb({ timeRemaining: () => 50, didTimeout: true }), 50)
       }
-    this.handle = ric.call(win ?? globalThis, (deadline: any) => this.process(deadline))
+
+    this.idleScheduled = true
+    const run = (deadline: any) => {
+      this.idleScheduled = false
+      this.process(deadline)
+    }
+    ric.call(win ?? globalThis, run)
   }
 
   private stopObserving(container: HTMLElement) {
@@ -573,7 +592,6 @@ class TokenUpdateScheduler {
   }
 
   private process(deadline: any) {
-    this.handle = null
     // Process visible tasks first. Use an adaptive limit per idle callback to
     // avoid creating a long main-thread task when many containers are queued.
     // The allowed tasks scale with deadline.timeRemaining() to be responsive on
@@ -643,7 +661,15 @@ class TokenUpdateScheduler {
             styleRoot: task.opts.styleRoot ?? task.container,
             tokenStyleMode: 'class',
           })
-          LAST_CODE.set(task.container, task.code)
+          setContainerRenderState(task.container, task.code, renderSignature({
+            lang: task.opts.lang,
+            theme: task.opts.theme,
+            preClass: task.opts.preClass ?? 'shiki',
+            codeClass: task.opts.codeClass ?? '',
+            lineClass: task.opts.lineClass ?? 'line',
+            showLineNumbers: task.opts.showLineNumbers ?? false,
+            startingLineNumber: task.opts.startingLineNumber ?? 1,
+          }))
           task.opts.onResult?.('full')
         }
         catch {
@@ -767,6 +793,7 @@ export function createScheduledTokenIncrementalUpdater(
         return
       cancelPendingWork()
       container.innerHTML = ''
+      clearContainerRenderState(container)
     },
     cancel: cancelPendingWork,
     dispose: () => {

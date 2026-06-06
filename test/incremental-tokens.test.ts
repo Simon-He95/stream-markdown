@@ -27,6 +27,18 @@ const coloredHl = {
   },
 }
 
+const themedHl = {
+  codeToThemedTokens(code: string) {
+    return code.split('\n').map(line => [{
+      content: line,
+      color: '#ff0000',
+    }])
+  },
+  getTheme(theme: string) {
+    return { bg: theme === 'dark' ? '#000000' : '#ffffff' }
+  },
+}
+
 const maliciousColorHl = {
   codeToThemedTokens(code: string) {
     return code.split('\n').map(line => [{
@@ -199,6 +211,17 @@ describe('updateCodeTokensIncremental', () => {
     expect(html).not.toContain('class="smd-token-')
   })
 
+  it('does not switch to class token mode when styleRoot is explicitly undefined', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      styleRoot: undefined,
+    })
+
+    expect(html).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')
+    expect(html).not.toContain('class="smd-token-')
+  })
+
   it('rehydrates token style rules when an updater skips identical code', () => {
     const updater = createTokenIncrementalUpdater(container, coloredHl as any, {
       lang: 'ts',
@@ -232,14 +255,14 @@ describe('updateCodeTokensIncremental', () => {
     const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
       lang: 'ts',
       theme: 'vitesse-dark',
-      preClass: 'shiki" data-bad="1',
-      codeClass: 'code" data-bad="1',
-      lineClass: 'line" data-bad="1',
+      preClass: 'shiki"<x> data-bad="1',
+      codeClass: 'code"<x> data-bad="1',
+      lineClass: 'line"<x> data-bad="1',
     })
 
-    expect(html).toContain('class="shiki&quot; data-bad=&quot;1"')
-    expect(html).toContain('class="code&quot; data-bad=&quot;1"')
-    expect(html).toContain('class="line&quot; data-bad=&quot;1"')
+    expect(html).toContain('class="shiki&quot;&lt;x&gt; data-bad=&quot;1"')
+    expect(html).toContain('class="code&quot;&lt;x&gt; data-bad=&quot;1"')
+    expect(html).toContain('class="line&quot;&lt;x&gt; data-bad=&quot;1"')
     expect(html).not.toContain('data-bad="1"')
   })
 
@@ -299,6 +322,29 @@ describe('updateCodeTokensIncremental', () => {
     expect(lines.length).toBe(2)
     expect(lines[0].textContent).toBe('a')
     expect(lines[1].textContent).toBe('b')
+  })
+
+  it('forces a full render when render options change', () => {
+    updateCodeTokensIncremental(container, themedHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#000000')
+
+    const result = updateCodeTokensIncremental(container, themedHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'light',
+      preClass: 'next-pre',
+      codeClass: 'next-code',
+      lineClass: 'next-line',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#ffffff')
+    expect(container.querySelector('pre')?.className).toBe('next-pre')
+    expect(container.querySelector('code')?.className).toBe('next-code')
+    expect(container.querySelectorAll('code .next-line')).toHaveLength(1)
   })
 
   it('does not falsely diverge in innerHTML mode after merged token DOM is created', () => {
