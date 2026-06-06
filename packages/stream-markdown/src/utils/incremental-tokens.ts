@@ -19,6 +19,22 @@ function countLines(code: string): number {
   return count
 }
 
+function normalizeTokenLinesForCode(
+  tokenLines: ThemedToken[][],
+  code: string,
+  cloneLines = false,
+): ThemedToken[][] {
+  const expected = countLines(code)
+  let lines = cloneLines ? tokenLines.map(line => line.slice()) : tokenLines
+
+  if (lines.length > expected)
+    lines = lines.slice(0, expected)
+  if (lines.length < expected)
+    lines = lines.concat(Array.from({ length: expected - lines.length }, () => []))
+
+  return lines
+}
+
 function estimateNodeCost(code: string): number {
   const lineCount = countLines(code)
   const estTokenSpans = Math.ceil(code.length / 6)
@@ -293,21 +309,12 @@ export function updateCodeTokensIncremental(
     return renderFull()
 
   const oldLines = codeEl.getElementsByClassName(lineClass) as HTMLCollectionOf<HTMLElement>
-  let tokenLines = providedTokenLines
-    // clone per line so we can pad without mutating caller-owned arrays
-    ? providedTokenLines.map(line => line.slice())
-    : getTokenLines(highlighter, code, lang, theme, {
+  const tokenLines = providedTokenLines
+    ? normalizeTokenLinesForCode(providedTokenLines, code, true)
+    : normalizeTokenLinesForCode(getTokenLines(highlighter, code, lang, theme, {
         tokenCache: opts.tokenCache,
         tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
-      })
-  // Normalize to preserve trailing empty lines (e.g., code ending with \n) and handle CRLF
-  {
-    const expected = countLines(code)
-    if (tokenLines.length < expected) {
-      const pad = expected - tokenLines.length
-      tokenLines = tokenLines.concat(Array.from({ length: pad }, () => []))
-    }
-  }
+      }), code)
   const newLen = tokenLines.length
   const oldLen = oldLines.length
 

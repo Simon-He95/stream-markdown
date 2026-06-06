@@ -453,6 +453,35 @@ describe('updateCodeTokensIncremental', () => {
     expect(lines[1].textContent).toBe('b')
   })
 
+  it('removes stale trailing lines from explicit token lines when code shrinks', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a\nb\nc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenLines: [
+        [{ content: 'a' }],
+        [{ content: 'b' }],
+        [{ content: 'c' }],
+      ],
+    })
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenLines: [
+        [{ content: 'a' }],
+        [{ content: 'b' }],
+        [{ content: 'stale' }],
+      ],
+    })
+
+    expect(result).toBe('full')
+
+    const lines = container.querySelectorAll('code .line')
+    expect(lines).toHaveLength(2)
+    expect(container.querySelector('code')?.textContent).toBe('a\nb')
+    expect(container.querySelector('code')?.textContent).not.toContain('stale')
+  })
+
   it('forces a full render when render options change', () => {
     updateCodeTokensIncremental(container, themedHl as any, 'const a = 1', {
       lang: 'ts',

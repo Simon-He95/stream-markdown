@@ -22,6 +22,8 @@ const TOKEN_STYLE_CACHE = new Map<string, string>()
 const TOKEN_STYLE_BY_CLASS = new Map<string, string>()
 const TOKEN_STYLE_RULES: string[] = []
 let tokenStyleGeneration = 0
+let tokenStyleSheetText = ''
+let tokenStyleSheetTextGeneration = -1
 type TokenStyleRoot = Document | ShadowRoot
 interface TokenStyleRootState {
   element: HTMLStyleElement
@@ -260,7 +262,12 @@ function isStyleElementMounted(root: TokenStyleRoot, styleElement: HTMLStyleElem
 }
 
 function getTokenStyleSheetText(): string {
-  return TOKEN_STYLE_RULES.join('\n')
+  if (tokenStyleSheetTextGeneration !== tokenStyleGeneration) {
+    tokenStyleSheetText = TOKEN_STYLE_RULES.join('\n')
+    tokenStyleSheetTextGeneration = tokenStyleGeneration
+  }
+
+  return tokenStyleSheetText
 }
 
 export function ensureTokenStyleSheet(target?: Node | null): void {
@@ -283,10 +290,9 @@ export function ensureTokenStyleSheet(target?: Node | null): void {
     TOKEN_STYLE_ROOTS.set(root, state)
   }
 
-  const cssText = getTokenStyleSheetText()
+  if (state.generation === tokenStyleGeneration)
+    return
 
-  if (state.generation !== tokenStyleGeneration || state.element.textContent !== cssText) {
-    state.element.textContent = cssText
-    state.generation = tokenStyleGeneration
-  }
+  state.element.textContent = getTokenStyleSheetText()
+  state.generation = tokenStyleGeneration
 }

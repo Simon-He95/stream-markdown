@@ -123,6 +123,20 @@ describe('renderCodeWithTokens', () => {
     expect(blueHtml).not.toBe(redHtml)
   })
 
+  it('does not render stale explicit token lines past the code line count', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'const value = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenLines: [
+        [{ content: 'const value = 1', color: '#ff0000' }],
+        [{ content: 'stale line', color: '#0000ff' }],
+      ],
+    })
+
+    expect(html).toContain('const value = 1')
+    expect(html).not.toContain('stale line')
+  })
+
   it('does not reuse cached HTML when theme background changes under the same theme name', () => {
     let bg = '#000000'
     const dynamicBgHl = {

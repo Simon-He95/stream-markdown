@@ -36,6 +36,22 @@ function countLines(code: string): number {
   return count
 }
 
+function normalizeTokenLinesForCode(
+  tokenLines: ThemedToken[][],
+  code: string,
+  cloneLines = false,
+): ThemedToken[][] {
+  const expected = countLines(code)
+  let lines = cloneLines ? tokenLines.map(line => line.slice()) : tokenLines
+
+  if (lines.length > expected)
+    lines = lines.slice(0, expected)
+  if (lines.length < expected)
+    lines = lines.concat(Array.from({ length: expected - lines.length }, () => []))
+
+  return lines
+}
+
 function escapeHtml(str: string): string {
   return str.replace(/\r/g, '')
     .replace(/&/g, '&amp;')
@@ -85,20 +101,12 @@ export function renderCodeWithTokens(
     }
   }
 
-  let lines: ThemedToken[][]
-  lines = opts.tokenLines
-    ? opts.tokenLines.map(line => line.slice())
-    : getTokenLines(highlighter, code, lang, theme, {
+  const lines = opts.tokenLines
+    ? normalizeTokenLinesForCode(opts.tokenLines, code, true)
+    : normalizeTokenLinesForCode(getTokenLines(highlighter, code, lang, theme, {
         tokenCache: opts.tokenCache,
         tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
-      })
-
-  {
-    const expected = countLines(code)
-    if (lines.length < expected) {
-      lines = lines.concat(Array.from({ length: expected - lines.length }, () => []))
-    }
-  }
+      }), code)
 
   let lineNumber = startingLineNumber
   const lineHtml = lines.map((line) => {

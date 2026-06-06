@@ -137,8 +137,11 @@ export function scheduleRenderJob(job: () => void, options?: { priority?: 'high'
       return
     cancelled = true
     const idx = queue.indexOf(wrappedJob)
-    if (idx >= 0)
+    if (idx >= 0) {
       queue.splice(idx, 1)
+      if (queue.length === 0)
+        cancelFrame()
+    }
   }
 }
 
