@@ -61,7 +61,16 @@ export function renderCodeWithTokens(
   const tokenStyleMode: TokenStyleMode = requestedTokenStyleMode === 'class' && typeof document !== 'undefined'
     ? 'class'
     : 'inline'
-  const cacheKey = `${tokenStyleMode}-token-style\u0001${lang}\u0001${theme}\u0001${preClass}\u0001${codeClass}\u0001${lineClass}\u0001${showLineNumbers ? 1 : 0}\u0001${startingLineNumber}\u0001${code}`
+  let bg: string | undefined
+  try {
+    const themeObj = (highlighter as any).getTheme?.(theme)
+    bg = themeObj?.bg
+  }
+  catch {
+    // ignore
+  }
+  const safeBg = normalizeCssColor(bg)
+  const cacheKey = `${tokenStyleMode}-token-style\u0001${safeBg}\u0001${lang}\u0001${theme}\u0001${preClass}\u0001${codeClass}\u0001${lineClass}\u0001${showLineNumbers ? 1 : 0}\u0001${startingLineNumber}\u0001${code}`
   const canUseHtmlCache = opts.tokenLines == null
   if (canUseHtmlCache) {
     const cachedHtml = getCachedHtml(highlighter, cacheKey, {
@@ -88,15 +97,6 @@ export function renderCodeWithTokens(
     if (lines.length < expected) {
       lines = lines.concat(Array.from({ length: expected - lines.length }, () => []))
     }
-  }
-
-  let bg: string | undefined
-  try {
-    const themeObj = (highlighter as any).getTheme?.(theme)
-    bg = themeObj?.bg
-  }
-  catch {
-    // ignore
   }
 
   let lineNumber = startingLineNumber
@@ -135,7 +135,6 @@ export function renderCodeWithTokens(
     return `<span class="${escapeAttr(lineClass)}">${ln}${tokensHtml}</span>`
   }).join('\n')
 
-  const safeBg = normalizeCssColor(bg)
   const preStyle = safeBg ? ` style="background-color: ${escapeAttr(safeBg)};"` : ''
   const safePreClass = escapeAttr(preClass)
   const codeCls = codeClass ? ` class="${escapeAttr(codeClass)}"` : ''

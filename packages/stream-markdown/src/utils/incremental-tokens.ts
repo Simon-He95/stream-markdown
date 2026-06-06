@@ -2,7 +2,7 @@ import type { Highlighter } from 'shiki'
 import type { RenderOptions, ThemedToken } from './shiki-render.js'
 import { renderCodeWithTokens } from './shiki-render.js'
 import { getTokenLines } from './token-cache.js'
-import { ensureTokenStyleSheet, getTokenClassName, getTokenStyleAttr, getTokenStyleSignature } from './token-style.js'
+import { ensureTokenStyleSheet, getTokenClassName, getTokenStyleAttr, getTokenStyleSignature, normalizeCssColor } from './token-style.js'
 
 export type UpdateResult = 'incremental' | 'full' | 'noop'
 
@@ -35,6 +35,7 @@ function escapeHtml(str: string): string {
 function renderSignature(options: {
   lang: string
   theme: string
+  backgroundColor: string
   preClass: string
   codeClass: string
   lineClass: string
@@ -44,12 +45,23 @@ function renderSignature(options: {
   return [
     options.lang,
     options.theme,
+    options.backgroundColor,
     options.preClass,
     options.codeClass,
     options.lineClass,
     options.showLineNumbers ? '1' : '0',
     String(options.startingLineNumber),
   ].join('\u0001')
+}
+
+function getThemeBackgroundColor(highlighter: Highlighter, theme: string): string {
+  try {
+    const themeObj = (highlighter as any).getTheme?.(theme)
+    return normalizeCssColor(themeObj?.bg)
+  }
+  catch {
+    return ''
+  }
 }
 
 function clearContainerRenderState(container: HTMLElement): void {
@@ -227,9 +239,11 @@ export function updateCodeTokensIncremental(
   const compareMode = opts.compareMode ?? 'signature'
   const ownerDocument = container.ownerDocument
   const styleRoot = opts.styleRoot ?? container
+  const backgroundColor = getThemeBackgroundColor(highlighter, theme)
   const signature = renderSignature({
     lang,
     theme,
+    backgroundColor,
     preClass,
     codeClass,
     lineClass,
@@ -461,7 +475,21 @@ export function createTokenIncrementalUpdater(
       const skipSame = tokenLines == null && opts.skipSameCode !== false
       if (skipSame && lastCode === code) {
         const codeEl = target.querySelector('code')
-        if (codeEl && (codeEl.textContent ?? '').replace(/\r/g, '') === code.replace(/\r/g, '')) {
+        const signature = renderSignature({
+          lang: opts.lang,
+          theme: opts.theme,
+          backgroundColor: getThemeBackgroundColor(highlighter, opts.theme),
+          preClass: opts.preClass ?? 'shiki',
+          codeClass: opts.codeClass ?? '',
+          lineClass: opts.lineClass ?? 'line',
+          showLineNumbers: opts.showLineNumbers ?? false,
+          startingLineNumber: opts.startingLineNumber ?? 1,
+        })
+        if (
+          codeEl
+          && RENDER_SIGNATURES.get(target) === signature
+          && (codeEl.textContent ?? '').replace(/\r/g, '') === code.replace(/\r/g, '')
+        ) {
           ensureTokenStyleSheet(opts.styleRoot ?? target)
           opts.onResult?.('noop')
           return 'noop'
@@ -664,6 +692,7 @@ class TokenUpdateScheduler {
           setContainerRenderState(task.container, task.code, renderSignature({
             lang: task.opts.lang,
             theme: task.opts.theme,
+            backgroundColor: getThemeBackgroundColor(task.highlighter, task.opts.theme),
             preClass: task.opts.preClass ?? 'shiki',
             codeClass: task.opts.codeClass ?? '',
             lineClass: task.opts.lineClass ?? 'line',

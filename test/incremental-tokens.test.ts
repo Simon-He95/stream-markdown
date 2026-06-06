@@ -347,6 +347,64 @@ describe('updateCodeTokensIncremental', () => {
     expect(container.querySelectorAll('code .next-line')).toHaveLength(1)
   })
 
+  it('forces a full render when the same theme name resolves to a different background', () => {
+    let bg = '#000000'
+    const dynamicBgHl = {
+      codeToThemedTokens(code: string) {
+        return code.split('\n').map(line => [{
+          content: line,
+          color: '#ff0000',
+        }])
+      },
+      getTheme() {
+        return { bg }
+      },
+    }
+
+    updateCodeTokensIncremental(container, dynamicBgHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'dynamic',
+    })
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#000000')
+
+    bg = '#ffffff'
+    const result = updateCodeTokensIncremental(container, dynamicBgHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'dynamic',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#ffffff')
+  })
+
+  it('does not skip identical code when the same theme name resolves to a different background', () => {
+    let bg = '#000000'
+    const dynamicBgHl = {
+      codeToThemedTokens(code: string) {
+        return code.split('\n').map(line => [{
+          content: line,
+          color: '#ff0000',
+        }])
+      },
+      getTheme() {
+        return { bg }
+      },
+    }
+    const updater = createTokenIncrementalUpdater(container, dynamicBgHl as any, {
+      lang: 'ts',
+      theme: 'dynamic',
+    })
+
+    updater.update('const a = 1')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#000000')
+
+    bg = '#ffffff'
+    expect(updater.update('const a = 1')).toBe('full')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#ffffff')
+
+    updater.dispose()
+  })
+
   it('does not falsely diverge in innerHTML mode after merged token DOM is created', () => {
     const splitSameStyleHl = {
       codeToThemedTokens(code: string) {

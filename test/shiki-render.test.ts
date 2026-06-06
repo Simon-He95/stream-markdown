@@ -123,6 +123,31 @@ describe('renderCodeWithTokens', () => {
     expect(blueHtml).not.toBe(redHtml)
   })
 
+  it('does not reuse cached HTML when theme background changes under the same theme name', () => {
+    let bg = '#000000'
+    const dynamicBgHl = {
+      codeToThemedTokens(code: string) {
+        return code.split('\n').map(line => [{ content: line }])
+      },
+      getTheme() {
+        return { bg }
+      },
+    }
+
+    const opts = {
+      lang: 'ts',
+      theme: 'dynamic',
+      htmlCache: true,
+    }
+
+    const html1 = renderCodeWithTokens(dynamicBgHl as any, 'const a = 1', opts)
+    bg = '#ffffff'
+    const html2 = renderCodeWithTokens(dynamicBgHl as any, 'const a = 1', opts)
+
+    expect(html1).toContain('background-color: #000000;')
+    expect(html2).toContain('background-color: #ffffff;')
+  })
+
   it('does not inject arbitrary CSS from theme background colors', () => {
     const html = renderCodeWithTokens(maliciousBgHl as any, 'const a = 1', {
       lang: 'ts',
