@@ -26,4 +26,47 @@ describe('render scheduler', () => {
 
     expect(order).toEqual(['shared', 'middle'])
   })
+
+  it('falls back to setTimeout when requestAnimationFrame is unavailable', async () => {
+    const origGlobalRaf = (globalThis as any).requestAnimationFrame
+    const origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame
+    const origWindowRaf = (window as any).requestAnimationFrame
+    const origWindowCancelRaf = (window as any).cancelAnimationFrame
+
+    try {
+      delete (globalThis as any).requestAnimationFrame
+      delete (globalThis as any).cancelAnimationFrame
+      delete (window as any).requestAnimationFrame
+      delete (window as any).cancelAnimationFrame
+
+      const order: string[] = []
+      scheduleRenderJob(() => order.push('run'))
+
+      resume()
+      await new Promise(resolve => setTimeout(resolve, 25))
+
+      expect(order).toEqual(['run'])
+    }
+    finally {
+      if (origGlobalRaf === undefined)
+        delete (globalThis as any).requestAnimationFrame
+      else
+        (globalThis as any).requestAnimationFrame = origGlobalRaf
+
+      if (origGlobalCancelRaf === undefined)
+        delete (globalThis as any).cancelAnimationFrame
+      else
+        (globalThis as any).cancelAnimationFrame = origGlobalCancelRaf
+
+      if (origWindowRaf === undefined)
+        delete (window as any).requestAnimationFrame
+      else
+        (window as any).requestAnimationFrame = origWindowRaf
+
+      if (origWindowCancelRaf === undefined)
+        delete (window as any).cancelAnimationFrame
+      else
+        (window as any).cancelAnimationFrame = origWindowCancelRaf
+    }
+  })
 })

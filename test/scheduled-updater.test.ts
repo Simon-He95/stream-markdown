@@ -204,12 +204,10 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
 
     await new Promise(r => setTimeout(r, 0))
 
-    // The DOM should reflect one of the updates (ideally the last one). We don't
-    // strictly require the onResult callback here because scheduling semantics
-    // may vary in tests; just assert the container was updated.
-    const codeEl = container.querySelector('code')
-    const txt = codeEl ? codeEl.textContent ?? '' : ''
-    expect(txt.length).toBeGreaterThanOrEqual(0)
+    expect(results).toEqual(['full'])
+    expect(container.querySelector('code')?.textContent).toBe('final')
+
+    updater.dispose()
   })
 
   it('keeps a follow-up task scheduled from onResult observed', async () => {

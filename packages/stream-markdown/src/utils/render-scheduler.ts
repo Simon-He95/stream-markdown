@@ -3,7 +3,10 @@
 // request updates at once (e.g., when restoring history).
 
 const queue: Array<() => void> = []
-let rafId: number | null = null
+type FrameHandle = number | ReturnType<typeof setTimeout>
+
+let rafId: FrameHandle | null = null
+let cancelScheduledFrame: ((id: FrameHandle) => void) | null = null
 let paused = false
 
 // Milliseconds per frame we allow for running jobs. Tuneable via setTimeBudget().
@@ -37,17 +40,60 @@ export function resume() {
   ensureFrame()
 }
 
+function now() {
+  return globalThis.performance?.now ? globalThis.performance.now() : Date.now()
+}
+
+function getFrameScheduler(): {
+  request: (cb: FrameRequestCallback) => FrameHandle
+  cancel: (id: FrameHandle) => void
+} {
+  const globalScope = globalThis as any
+  const win = typeof window !== 'undefined' ? (window as any) : null
+  const owner = typeof globalScope.requestAnimationFrame === 'function'
+    ? globalScope
+    : win && typeof win.requestAnimationFrame === 'function'
+      ? win
+      : null
+
+  if (owner) {
+    return {
+      request: cb => owner.requestAnimationFrame(cb),
+      cancel: id => owner.cancelAnimationFrame?.(id),
+    }
+  }
+
+  return {
+    request: cb => setTimeout(() => cb(now()), 16),
+    cancel: id => clearTimeout(id),
+  }
+}
+
+function cancelFrame() {
+  if (rafId == null)
+    return
+
+  const id = rafId
+  const cancel = cancelScheduledFrame
+  rafId = null
+  cancelScheduledFrame = null
+  cancel?.(id)
+}
+
 function ensureFrame() {
   if (rafId != null)
     return
   if (paused)
     return
-  rafId = requestAnimationFrame(runFrame)
+  const scheduler = getFrameScheduler()
+  cancelScheduledFrame = scheduler.cancel
+  rafId = scheduler.request(runFrame)
 }
 
 function runFrame() {
   rafId = null
-  const start = performance.now()
+  cancelScheduledFrame = null
+  const start = now()
   while (queue.length > 0) {
     const job = queue.shift()!
     try {
@@ -59,7 +105,7 @@ function runFrame() {
 
       console.error('render-scheduler job error', e)
     }
-    if (performance.now() - start >= TIME_BUDGET) {
+    if (now() - start >= TIME_BUDGET) {
       // reached budget — schedule remainder for next frame
       break
     }
@@ -110,10 +156,7 @@ export function runImmediate(job: () => void) {
  */
 export function drain() {
   // If a frame is scheduled, cancel it — we'll run everything synchronously.
-  if (rafId != null) {
-    cancelAnimationFrame(rafId)
-    rafId = null
-  }
+  cancelFrame()
   while (queue.length > 0) {
     const job = queue.shift()!
     try {
@@ -128,8 +171,5 @@ export function drain() {
  */
 export function clearAll() {
   queue.length = 0
-  if (rafId != null) {
-    cancelAnimationFrame(rafId)
-    rafId = null
-  }
+  cancelFrame()
 }
