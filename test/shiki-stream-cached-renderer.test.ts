@@ -50,4 +50,70 @@ describe('createShikiStreamCachedRenderer', () => {
     expect(renderer.getState().tokenCount).toBe(0)
     renderer.dispose()
   })
+
+  it('renders pending token lines with their matching code snapshot', async () => {
+    const origRaf = (globalThis as any).requestAnimationFrame
+    const origCancelRaf = (globalThis as any).cancelAnimationFrame
+    const rafCallbacks: FrameRequestCallback[] = []
+    ;(globalThis as any).requestAnimationFrame = (cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb)
+      return rafCallbacks.length
+    }
+    ;(globalThis as any).cancelAnimationFrame = vi.fn()
+
+    try {
+      let resolveSecond!: (value: any) => void
+      shikiStreamMock.enqueueResults.push(
+        { recall: 0, stable: [{ content: 'first' }], unstable: [] },
+        new Promise((resolve) => {
+          resolveSecond = resolve
+        }),
+      )
+
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+      const renderer = createShikiStreamCachedRenderer(container, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: 0,
+      })
+
+      await renderer.updateCode('first')
+
+      const secondUpdate = renderer.updateCode('second\nline')
+      await Promise.resolve()
+
+      rafCallbacks.shift()?.(performance.now())
+      await new Promise(r => setTimeout(r, 0))
+
+      expect(container.querySelectorAll('code .line')).toHaveLength(1)
+      expect(container.querySelector('code')?.textContent).toBe('first')
+
+      resolveSecond({
+        recall: 0,
+        stable: [{ content: 'second' }, { content: '\n' }, { content: 'line' }],
+        unstable: [],
+      })
+      await secondUpdate
+
+      rafCallbacks.shift()?.(performance.now())
+      await new Promise(r => setTimeout(r, 0))
+
+      expect(container.querySelectorAll('code .line')).toHaveLength(2)
+      expect(container.querySelector('code')?.textContent).toBe('second\nline')
+
+      renderer.dispose()
+    }
+    finally {
+      if (origRaf === undefined)
+        delete (globalThis as any).requestAnimationFrame
+      else
+        (globalThis as any).requestAnimationFrame = origRaf
+
+      if (origCancelRaf === undefined)
+        delete (globalThis as any).cancelAnimationFrame
+      else
+        (globalThis as any).cancelAnimationFrame = origCancelRaf
+    }
+  })
 })

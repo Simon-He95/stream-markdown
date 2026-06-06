@@ -1,3 +1,7 @@
+const CSS_COLOR_FUNCTION_RE = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\([\w\s.,%/+~-]+\)$/i
+const CSS_VAR_NAME_RE = /^--[\w-]+$/
+const CSS_VAR_FALLBACK_RE = /^[\w\s#.,%()+/~-]+$/
+
 function fontStyleToCss(style?: number): string {
   if (!style || style === 0)
     return ''
@@ -15,9 +19,85 @@ const TOKEN_CLASS_CACHE = new Map<string, string>()
 const TOKEN_STYLE_RULES: string[] = []
 let tokenStyleElement: HTMLStyleElement | null = null
 let tokenStyleSheetDirty = false
+let colorProbe: HTMLElement | null = null
+
+function hasUnsafeCssValueChar(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    if (code <= 31 || code === 127)
+      return true
+    if (`;"'{}<>`.includes(value[i]))
+      return true
+  }
+  return false
+}
+
+function isSafeCssColorSyntax(value: string): boolean {
+  if (!value || hasUnsafeCssValueChar(value))
+    return false
+  if (/url\s*\(/i.test(value))
+    return false
+  return true
+}
+
+function isSafeCssVar(value: string): boolean {
+  if (!value.startsWith('var(') || !value.endsWith(')'))
+    return false
+
+  const body = value.slice(4, -1)
+  const commaIndex = body.indexOf(',')
+  if (commaIndex === -1)
+    return CSS_VAR_NAME_RE.test(body.trim())
+
+  const name = body.slice(0, commaIndex).trim()
+  const fallback = body.slice(commaIndex + 1).trim()
+  return CSS_VAR_NAME_RE.test(name) && CSS_VAR_FALLBACK_RE.test(fallback)
+}
+
+function isSafeCssColorForSsr(value: string): boolean {
+  return /^#[\da-f]{3,8}$/i.test(value)
+    || /^[a-z][a-z0-9-]*$/i.test(value)
+    || CSS_COLOR_FUNCTION_RE.test(value)
+    || isSafeCssVar(value)
+}
+
+function isValidDomColor(value: string): boolean {
+  const css = (globalThis as any).CSS
+  if (css && typeof css.supports === 'function') {
+    try {
+      if (css.supports('color', value))
+        return true
+    }
+    catch {
+      // Fall through to style-property probing.
+    }
+  }
+
+  if (typeof document === 'undefined')
+    return false
+
+  if (!colorProbe || colorProbe.ownerDocument !== document)
+    colorProbe = document.createElement('span')
+
+  colorProbe.style.color = ''
+  colorProbe.style.color = value
+  return colorProbe.style.color !== ''
+}
+
+function normalizeColor(color?: string): string {
+  const value = color?.trim()
+  if (!value || !isSafeCssColorSyntax(value))
+    return ''
+
+  if (typeof document !== 'undefined')
+    return isValidDomColor(value) ? value : ''
+
+  return isSafeCssColorForSsr(value) ? value : ''
+}
 
 function tokenStyle(color?: string, fontStyle?: number): string {
-  const colorCss = color ? `color: ${color};` : ''
+  const normalizedColor = normalizeColor(color)
+  const colorCss = normalizedColor ? `color: ${normalizedColor};` : ''
   return `${colorCss}${fontStyleToCss(fontStyle)}`
 }
 

@@ -104,7 +104,7 @@ export function createShikiStreamRenderer(
     updater = createUpdater(container, highlighter, {
       lang: currentLang ?? 'plaintext',
       theme: currentTheme,
-      appendOnlyFastPath: options.appendOnlyFastPath ?? true,
+      appendOnlyFastPath: options.appendOnlyFastPath,
       throttleMs: options.throttleMs,
     })
   }

@@ -26,6 +26,16 @@ const coloredHl = {
   },
 }
 
+const maliciousColorHl = {
+  codeToThemedTokens(code: string) {
+    return code.split('\n').map(line => [{
+      content: line,
+      color: '#ff0000;}body{display:none',
+      fontStyle: 0,
+    }])
+  },
+}
+
 describe('updateCodeTokensIncremental', () => {
   let container: HTMLElement
 
@@ -83,6 +93,35 @@ describe('updateCodeTokensIncremental', () => {
     expect(html2).toBe(html1)
     styleEl = document.head.querySelector('style[data-stream-markdown-token-styles]')
     expect(styleEl?.textContent).toContain('color: #ff0000;')
+  })
+
+  it('rehydrates token style rules when an updater skips identical code', () => {
+    const updater = createTokenIncrementalUpdater(container, coloredHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    updater.update('const')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+      .toContain('color: #ff0000;')
+
+    document.head.innerHTML = ''
+
+    expect(updater.update('const')).toBe('noop')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+      .toContain('color: #ff0000;')
+
+    updater.dispose()
+  })
+
+  it('does not inject arbitrary global CSS from token colors', () => {
+    updateCodeTokensIncremental(container, maliciousColorHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(document.head.textContent ?? '').not.toContain('body{display:none')
+    expect(document.head.textContent ?? '').not.toContain('}body{')
   })
 
   it('appends a new line incrementally', () => {

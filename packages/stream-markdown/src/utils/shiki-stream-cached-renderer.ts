@@ -1,9 +1,9 @@
-import type { createTokenIncrementalUpdater } from './incremental-tokens.js'
+import type { TokenIncrementalUpdater } from './incremental-tokens.js'
 import type { ThemedToken } from './shiki-render.js'
 import type { ShikiStreamRendererOptions } from './shiki-stream-renderer.js'
 import { ShikiStreamTokenizer } from 'shiki-stream'
 import { registerHighlight } from './highlight.js'
-import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
+import { createScheduledTokenIncrementalUpdater, createTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
 import { observeElement } from './shared-intersection-observer.js'
 
@@ -43,10 +43,10 @@ export function createShikiStreamCachedRenderer(
   let highlighter: any | null = null
   let tokenizer: ShikiStreamTokenizer | null = null
   let tokenBuffer: ThemedToken[] = []
-  let updater: ReturnType<typeof createTokenIncrementalUpdater> | null = null
+  let updater: TokenIncrementalUpdater | null = null
   const useRaf = options.scheduleInRaf ?? true
   let scheduled = false
-  let pendingTokenLines: ThemedToken[][] | null = null
+  let pendingRender: { code: string, tokenLines: ThemedToken[][] } | null = null
   let disposed = false
   let unregisterObserver: (() => void) | null = null
   let isVisible = false
@@ -103,25 +103,30 @@ export function createShikiStreamCachedRenderer(
     updater?.dispose()
     if (!highlighter)
       return
-    updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
+
+    const createUpdater = useRaf
+      ? createScheduledTokenIncrementalUpdater
+      : createTokenIncrementalUpdater
+
+    updater = createUpdater(container, highlighter, {
       lang: currentLang ?? 'plaintext',
       theme: currentTheme,
-      appendOnlyFastPath: options.appendOnlyFastPath ?? true,
+      appendOnlyFastPath: options.appendOnlyFastPath,
       throttleMs: options.throttleMs,
     })
   }
 
-  const scheduleRender = (tokenLines: ThemedToken[][]) => {
+  const scheduleRender = (code: string, tokenLines: ThemedToken[][]) => {
     if (disposed)
       return
-    pendingTokenLines = tokenLines
+    pendingRender = { code, tokenLines }
     if (!useRaf) {
       if (!updater)
         return
-      const lines = pendingTokenLines
-      pendingTokenLines = null
-      if (lines)
-        updater.update(currentCode, lines)
+      const render = pendingRender
+      pendingRender = null
+      if (render)
+        updater.update(render.code, render.tokenLines)
       return
     }
     if (scheduled)
@@ -130,11 +135,11 @@ export function createShikiStreamCachedRenderer(
     const priority = isVisible ? 'high' : 'normal'
     scheduleRenderJob(() => {
       scheduled = false
-      if (!updater || !pendingTokenLines)
+      if (disposed || !updater || !pendingRender)
         return
-      const lines = pendingTokenLines
-      pendingTokenLines = null
-      updater.update(currentCode, lines)
+      const render = pendingRender
+      pendingRender = null
+      updater.update(render.code, render.tokenLines)
     }, { priority })
   }
 
@@ -188,7 +193,7 @@ export function createShikiStreamCachedRenderer(
       tokenBuffer = []
 
     tokenBuffer.push(...(stable ?? []), ...(unstable ?? []))
-    scheduleRender(tokensToLines(tokenBuffer))
+    scheduleRender(code, tokensToLines(tokenBuffer))
   })
 
   const setTheme = (theme: string) => enqueue(async () => {
@@ -214,12 +219,12 @@ export function createShikiStreamCachedRenderer(
     if (disposed)
       return
     tokenBuffer = [...(stable ?? []), ...(unstable ?? [])]
-    scheduleRender(tokensToLines(tokenBuffer))
+    scheduleRender(currentCode, tokensToLines(tokenBuffer))
   })
 
   const dispose = () => {
     disposed = true
-    pendingTokenLines = null
+    pendingRender = null
     updater?.dispose()
     updater = null
     tokenizer?.clear()

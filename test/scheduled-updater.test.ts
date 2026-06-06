@@ -12,6 +12,17 @@ const hl = {
   },
 }
 
+const futureDependentHl = {
+  codeToThemedTokens(code: string) {
+    const color = code.includes('END') ? '#ff0000' : '#0000ff'
+    return code.split('\n').map(line => [{
+      content: line,
+      color,
+      fontStyle: 0,
+    }])
+  },
+}
+
 describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
   let origRIC: any
   let origIO: any
@@ -129,6 +140,31 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     await new Promise(r => setTimeout(r, 15))
 
     expect(container.querySelector('code')?.textContent).toBe('final')
+  })
+
+  it('does not enable appendOnlyFastPath by default', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const updater = createScheduledTokenIncrementalUpdater(container, futureDependentHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      throttleMs: 0,
+    })
+
+    updater.update('a\n')
+    await new Promise(r => setTimeout(r, 0))
+
+    const firstClassBefore = (container.querySelector('code .line:first-child span') as HTMLElement).className
+
+    updater.update('a\nEND')
+    await new Promise(r => setTimeout(r, 0))
+
+    const firstClassAfter = (container.querySelector('code .line:first-child span') as HTMLElement).className
+
+    expect(firstClassAfter).not.toBe(firstClassBefore)
+
+    updater.dispose()
   })
 
   // Note: starvation regression is covered by integration manual testing due to

@@ -18,6 +18,12 @@ function countLines(code: string): number {
   return count
 }
 
+function estimateNodeCost(code: string): number {
+  const lineCount = countLines(code)
+  const estTokenSpans = Math.ceil(code.length / 6)
+  return Math.min(8000, lineCount + estTokenSpans)
+}
+
 function escapeHtml(str: string): string {
   return str.replace(/\r/g, '')
     .replace(/&/g, '&amp;')
@@ -166,6 +172,8 @@ export function updateCodeTokensIncremental(
 
   // Ensure initial structure
   const codeEl = container.querySelector('code') as HTMLElement | null
+  if (codeEl)
+    ensureTokenStyleSheet()
   if (!codeEl) {
     container.innerHTML = renderCodeWithTokens(highlighter, code, {
       lang,
@@ -404,6 +412,7 @@ export function createTokenIncrementalUpdater(
       if (skipSame && lastCode === code) {
         const codeEl = target.querySelector('code')
         if (codeEl && (codeEl.textContent ?? '').replace(/\r/g, '') === code.replace(/\r/g, '')) {
+          ensureTokenStyleSheet()
           opts.onResult?.('noop')
           return 'noop'
         }
@@ -475,18 +484,18 @@ class TokenUpdateScheduler {
       prev.highlighter = highlighter
       prev.opts = opts
       prev.tokenLines = tokenLines
+      prev.estNodes = estimateNodeCost(code)
       return prev.id
     }
 
-    const task: ScheduledTask = { id: this.nextId++, container, highlighter, code, opts, tokenLines }
-    // Cheap heuristic for node cost to avoid double tokenization here:
-    // - base on line count and code length (tokens roughly scale with length)
-    // This is only used to decide whether to defer a large task to next tick.
-    {
-      const lineCount = countLines(code)
-      // assume ~1 token span per ~6 chars on average
-      const estTokenSpans = Math.ceil(code.length / 6)
-      task.estNodes = Math.min(8000, lineCount + estTokenSpans)
+    const task: ScheduledTask = {
+      id: this.nextId++,
+      container,
+      highlighter,
+      code,
+      opts,
+      tokenLines,
+      estNodes: estimateNodeCost(code),
     }
     this.queue.push(task)
     this.byContainer.set(container, task)
@@ -576,6 +585,7 @@ class TokenUpdateScheduler {
             htmlCacheMaxEntries: task.opts.htmlCacheMaxEntries,
             tokenLines: task.tokenLines,
           })
+          LAST_CODE.set(task.container, task.code)
           task.opts.onResult?.('full')
         }
         catch {
@@ -634,7 +644,7 @@ export function createScheduledTokenIncrementalUpdater(
 
     const updateOpts = {
       ...opts,
-      appendOnlyFastPath: opts.appendOnlyFastPath ?? true,
+      appendOnlyFastPath: opts.appendOnlyFastPath ?? false,
     }
 
     // Schedule the update; result will be delivered via opts.onResult when executed
