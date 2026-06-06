@@ -74,6 +74,10 @@ function setContainerRenderState(container: HTMLElement, code: string, signature
   RENDER_SIGNATURES.set(container, signature)
 }
 
+function getIncrementalStyleRoot(opts: { styleRoot?: Node | null }, container: HTMLElement): Node | null {
+  return opts.styleRoot === undefined ? container : opts.styleRoot
+}
+
 function lineInnerHtml(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber?: number): string {
   let tokensHtml = ''
   let i = 0
@@ -238,7 +242,7 @@ export function updateCodeTokensIncremental(
   } = opts
   const compareMode = opts.compareMode ?? 'signature'
   const ownerDocument = container.ownerDocument
-  const styleRoot = opts.styleRoot ?? container
+  const styleRoot = getIncrementalStyleRoot(opts, container)
   const backgroundColor = getThemeBackgroundColor(highlighter, theme)
   const signature = renderSignature({
     lang,
@@ -281,10 +285,8 @@ export function updateCodeTokensIncremental(
     return renderFull()
 
   const previousSignature = RENDER_SIGNATURES.get(container)
-  if (previousSignature && previousSignature !== signature)
+  if (previousSignature !== signature)
     return renderFull()
-  if (!previousSignature)
-    RENDER_SIGNATURES.set(container, signature)
 
   const oldLines = codeEl.getElementsByClassName(lineClass) as HTMLCollectionOf<HTMLElement>
   let tokenLines = providedTokenLines
@@ -490,7 +492,7 @@ export function createTokenIncrementalUpdater(
           && RENDER_SIGNATURES.get(target) === signature
           && (codeEl.textContent ?? '').replace(/\r/g, '') === code.replace(/\r/g, '')
         ) {
-          ensureTokenStyleSheet(opts.styleRoot ?? target)
+          ensureTokenStyleSheet(getIncrementalStyleRoot(opts, target))
           opts.onResult?.('noop')
           return 'noop'
         }
@@ -686,7 +688,7 @@ class TokenUpdateScheduler {
             htmlCache: task.opts.htmlCache,
             htmlCacheMaxEntries: task.opts.htmlCacheMaxEntries,
             tokenLines: task.tokenLines,
-            styleRoot: task.opts.styleRoot ?? task.container,
+            styleRoot: getIncrementalStyleRoot(task.opts, task.container),
             tokenStyleMode: 'class',
           })
           setContainerRenderState(task.container, task.code, renderSignature({
@@ -741,15 +743,16 @@ export function createScheduledTokenIncrementalUpdater(
   opts: TokenIncrementalOptions,
 ): TokenIncrementalUpdater {
   let alive = true
+  let target: HTMLElement | null | undefined = container
   let scheduledTaskId: number | null = null
   let pendingCode: string | null = null
   let pendingTokenLines: ThemedToken[][] | undefined
   let timer: ReturnType<typeof setTimeout> | null = null
 
   const cancelScheduledTask = () => {
-    if (!container || scheduledTaskId == null)
+    if (!target || scheduledTaskId == null)
       return
-    globalTokenUpdateScheduler.cancelFor(container)
+    globalTokenUpdateScheduler.cancelFor(target)
     scheduledTaskId = null
   }
 
@@ -765,10 +768,11 @@ export function createScheduledTokenIncrementalUpdater(
 
   const flush = () => {
     timer = null
-    if (!alive || !container || pendingCode == null)
+    if (!alive || !target || pendingCode == null)
       return
 
     const code = pendingCode
+    const targetEl = target
     const tokenLines = pendingTokenLines
     pendingCode = null
     pendingTokenLines = undefined
@@ -788,7 +792,7 @@ export function createScheduledTokenIncrementalUpdater(
     }
 
     // Schedule the update; result will be delivered via opts.onResult when executed
-    taskId = globalTokenUpdateScheduler.schedule(container, highlighter, code, updateOpts, tokenLines)
+    taskId = globalTokenUpdateScheduler.schedule(targetEl, highlighter, code, updateOpts, tokenLines)
     if (!completedSynchronously)
       scheduledTaskId = taskId
   }
@@ -805,9 +809,7 @@ export function createScheduledTokenIncrementalUpdater(
 
   return {
     update: (code: string, tokenLines?: ThemedToken[][]) => {
-      if (!alive)
-        return 'noop'
-      if (!container)
+      if (!alive || !target)
         return 'noop'
 
       cancelScheduledTask()
@@ -818,16 +820,17 @@ export function createScheduledTokenIncrementalUpdater(
       return 'noop'
     },
     reset: () => {
-      if (!alive || !container)
+      if (!alive || !target)
         return
       cancelPendingWork()
-      container.innerHTML = ''
-      clearContainerRenderState(container)
+      target.innerHTML = ''
+      clearContainerRenderState(target)
     },
     cancel: cancelPendingWork,
     dispose: () => {
       alive = false
       cancelPendingWork()
+      target = null
       // leave container as-is; caller may remove
     },
   }

@@ -68,6 +68,31 @@ describe('updateCodeTokensIncremental', () => {
     expect(container.querySelectorAll('code .line').length).toBe(1)
   })
 
+  it('falls back to full render for existing untracked DOM', () => {
+    container.innerHTML = [
+      '<pre class="old-pre">',
+      '<code class="old-code">',
+      '<span class="old-line"><span>a</span></span>',
+      '</code>',
+      '</pre>',
+    ].join('')
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      preClass: 'new-pre',
+      codeClass: 'new-code',
+      lineClass: 'new-line',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.className).toBe('new-pre')
+    expect(container.querySelector('code')?.className).toBe('new-code')
+    expect(container.querySelectorAll('code .old-line')).toHaveLength(0)
+    expect(container.querySelectorAll('code .new-line')).toHaveLength(2)
+    expect(container.querySelector('code')?.textContent).toBe('a\nb')
+  })
+
   it('unobserves scheduled containers after the task runs', async () => {
     vi.resetModules()
 
@@ -293,6 +318,27 @@ describe('updateCodeTokensIncremental', () => {
     expect(shadowStyle).toContain('color: #ff0000;')
 
     expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+  })
+
+  it('allows styleRoot null to override default shadow root injection', () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const shadow = host.attachShadow({ mode: 'open' })
+    const shadowContainer = document.createElement('div')
+    shadow.appendChild(shadowContainer)
+
+    updateCodeTokensIncremental(shadowContainer, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      styleRoot: null,
+    })
+
+    const token = shadowContainer.querySelector('code .line span') as HTMLElement
+    expect(token.className).toMatch(/^smd-token-/)
+
+    expect(shadow.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+      .toContain(`.${token.className}`)
   })
 
   it('appends a new line incrementally', () => {
