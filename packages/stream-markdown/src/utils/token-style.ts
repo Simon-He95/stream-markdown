@@ -17,8 +17,13 @@ function fontStyleToCss(style?: number): string {
 
 const TOKEN_CLASS_CACHE = new Map<string, string>()
 const TOKEN_STYLE_RULES: string[] = []
-let tokenStyleElement: HTMLStyleElement | null = null
-let tokenStyleSheetDirty = false
+let tokenStyleGeneration = 0
+type TokenStyleRoot = Document | ShadowRoot
+interface TokenStyleRootState {
+  element: HTMLStyleElement
+  generation: number
+}
+const TOKEN_STYLE_ROOTS = new WeakMap<TokenStyleRoot, TokenStyleRootState>()
 let colorProbe: HTMLElement | null = null
 
 function hasUnsafeCssValueChar(value: string): boolean {
@@ -111,8 +116,7 @@ export function getTokenStyleSignature(color?: string, fontStyle?: number): stri
   return tokenStyle(color, fontStyle)
 }
 
-export function getTokenClassName(color?: string, fontStyle?: number): string {
-  const style = tokenStyle(color, fontStyle)
+function getTokenClassNameForStyle(style: string): string {
   if (!style)
     return ''
 
@@ -123,8 +127,12 @@ export function getTokenClassName(color?: string, fontStyle?: number): string {
   const className = `smd-token-${TOKEN_CLASS_CACHE.size}`
   TOKEN_CLASS_CACHE.set(style, className)
   TOKEN_STYLE_RULES.push(`.${className}{${style}}`)
-  tokenStyleSheetDirty = true
+  tokenStyleGeneration++
   return className
+}
+
+export function getTokenClassName(color?: string, fontStyle?: number): string {
+  return getTokenClassNameForStyle(tokenStyle(color, fontStyle))
 }
 
 export function getTokenStyleAttr(color?: string, fontStyle?: number): string {
@@ -135,25 +143,79 @@ export function getTokenStyleAttr(color?: string, fontStyle?: number): string {
   if (typeof document === 'undefined')
     return ` style="${escapeAttr(style)}"`
 
-  return ` class="${getTokenClassName(color, fontStyle)}"`
+  return ` class="${getTokenClassNameForStyle(style)}"`
 }
 
-export function ensureTokenStyleSheet(): void {
-  if (typeof document === 'undefined' || TOKEN_STYLE_RULES.length === 0)
-    return
+function isDocumentRoot(node: Node): node is Document {
+  return node.nodeType === 9
+}
 
-  if (!tokenStyleElement || tokenStyleElement.ownerDocument !== document || !tokenStyleElement.isConnected) {
-    tokenStyleElement = document.querySelector('style[data-stream-markdown-token-styles]')
-    if (!tokenStyleElement) {
-      tokenStyleElement = document.createElement('style')
-      tokenStyleElement.dataset.streamMarkdownTokenStyles = ''
-      document.head.appendChild(tokenStyleElement)
-    }
-    tokenStyleSheetDirty = true
+function isShadowRoot(node: Node): node is ShadowRoot {
+  return node.nodeType === 11 && 'host' in node
+}
+
+function resolveStyleRoot(target?: Node | null): TokenStyleRoot | null {
+  if (target) {
+    if (isDocumentRoot(target) || isShadowRoot(target))
+      return target
+
+    const root = typeof target.getRootNode === 'function'
+      ? target.getRootNode()
+      : null
+
+    if (root && (isDocumentRoot(root) || isShadowRoot(root)))
+      return root
+
+    return target.ownerDocument ?? null
   }
 
-  if (tokenStyleSheetDirty) {
-    tokenStyleElement.textContent = TOKEN_STYLE_RULES.join('\n')
-    tokenStyleSheetDirty = false
+  if (typeof document !== 'undefined')
+    return document
+
+  return null
+}
+
+function getRootDocument(root: TokenStyleRoot): Document {
+  return isDocumentRoot(root) ? root : root.ownerDocument
+}
+
+function appendStyleElement(root: TokenStyleRoot, styleElement: HTMLStyleElement): void {
+  if (isDocumentRoot(root)) {
+    const parent = root.head ?? root.documentElement
+    parent.appendChild(styleElement)
+    return
+  }
+
+  root.appendChild(styleElement)
+}
+
+export function ensureTokenStyleSheet(target?: Node | null): void {
+  if (TOKEN_STYLE_RULES.length === 0)
+    return
+
+  const root = resolveStyleRoot(target)
+  if (!root)
+    return
+
+  let state = TOKEN_STYLE_ROOTS.get(root)
+  if (!state || !state.element.isConnected || state.element.ownerDocument !== getRootDocument(root)) {
+    let styleElement = root.querySelector('style[data-stream-markdown-token-styles]') as HTMLStyleElement | null
+
+    if (!styleElement) {
+      styleElement = getRootDocument(root).createElement('style')
+      styleElement.dataset.streamMarkdownTokenStyles = ''
+      appendStyleElement(root, styleElement)
+    }
+
+    state = {
+      element: styleElement,
+      generation: -1,
+    }
+    TOKEN_STYLE_ROOTS.set(root, state)
+  }
+
+  if (state.generation !== tokenStyleGeneration) {
+    state.element.textContent = TOKEN_STYLE_RULES.join('\n')
+    state.generation = tokenStyleGeneration
   }
 }

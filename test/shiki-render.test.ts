@@ -12,6 +12,39 @@ const coloredHl = {
   },
 }
 
+function createDocumentStub() {
+  let styleElement: any = null
+  const doc: any = {
+    nodeType: 9,
+    documentElement: {
+      appendChild(element: any) {
+        styleElement = element
+        element.isConnected = true
+      },
+    },
+    head: {
+      appendChild(element: any) {
+        styleElement = element
+        element.isConnected = true
+      },
+    },
+    querySelector(selector: string) {
+      return selector === 'style[data-stream-markdown-token-styles]' ? styleElement : null
+    },
+    createElement(tag: string) {
+      return {
+        tagName: tag.toUpperCase(),
+        ownerDocument: doc,
+        dataset: {},
+        style: { color: '' },
+        isConnected: false,
+        textContent: '',
+      }
+    },
+  }
+  return doc as Document
+}
+
 describe('renderCodeWithTokens', () => {
   it('uses inline token styles when rendering without a DOM', () => {
     const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
@@ -21,5 +54,36 @@ describe('renderCodeWithTokens', () => {
 
     expect(html).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')
     expect(html).not.toContain('class="smd-token-')
+  })
+
+  it('does not reuse cached DOM class HTML when rendering without a DOM', () => {
+    const originalDocument = (globalThis as any).document
+    ;(globalThis as any).document = createDocumentStub()
+
+    try {
+      const domHtml = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        htmlCache: true,
+      })
+
+      expect(domHtml).toContain('class="smd-token-')
+      expect(domHtml).not.toContain('style="color: #ff0000;')
+    }
+    finally {
+      if (originalDocument === undefined)
+        delete (globalThis as any).document
+      else
+        (globalThis as any).document = originalDocument
+    }
+
+    const ssrHtml = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      htmlCache: true,
+    })
+
+    expect(ssrHtml).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')
+    expect(ssrHtml).not.toContain('class="smd-token-')
   })
 })

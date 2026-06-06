@@ -124,6 +124,28 @@ describe('updateCodeTokensIncremental', () => {
     expect(document.head.textContent ?? '').not.toContain('}body{')
   })
 
+  it('injects generated token styles into the container shadow root', () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const shadow = host.attachShadow({ mode: 'open' })
+    const shadowContainer = document.createElement('div')
+    shadow.appendChild(shadowContainer)
+
+    updateCodeTokensIncremental(shadowContainer, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const token = shadowContainer.querySelector('code .line span') as HTMLElement
+    expect(token.className).toMatch(/^smd-token-/)
+
+    const shadowStyle = shadow.querySelector('style[data-stream-markdown-token-styles]')?.textContent
+    expect(shadowStyle).toContain(`.${token.className}`)
+    expect(shadowStyle).toContain('color: #ff0000;')
+
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+  })
+
   it('appends a new line incrementally', () => {
     updateCodeTokensIncremental(container, hl as any, 'a', { lang: 'ts', theme: 'vitesse-dark' })
     const res2 = updateCodeTokensIncremental(container, hl as any, 'a\nb', { lang: 'ts', theme: 'vitesse-dark' })
