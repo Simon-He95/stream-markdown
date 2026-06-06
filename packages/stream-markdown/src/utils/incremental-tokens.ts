@@ -611,19 +611,27 @@ class TokenUpdateScheduler {
     if (this.idleScheduled)
       return
 
+    const globalScope = globalThis as any
     const win = this.queue[0]?.container.ownerDocument?.defaultView as any
-    const ric = win?.requestIdleCallback
-      ?? (globalThis as any).requestIdleCallback
-      ?? function (cb: any) {
-        return setTimeout(() => cb({ timeRemaining: () => 50, didTimeout: true }), 50)
-      }
+    const ricOwner = win && typeof win.requestIdleCallback === 'function'
+      ? win
+      : typeof globalScope.requestIdleCallback === 'function'
+        ? globalScope
+        : null
+    const ric = ricOwner?.requestIdleCallback
 
     this.idleScheduled = true
     const run = (deadline: any) => {
       this.idleScheduled = false
       this.process(deadline)
     }
-    ric.call(win ?? globalThis, run)
+
+    if (ric) {
+      ric.call(ricOwner, run)
+      return
+    }
+
+    setTimeout(() => run({ timeRemaining: () => 50, didTimeout: true }), 50)
   }
 
   private stopObserving(container: HTMLElement) {

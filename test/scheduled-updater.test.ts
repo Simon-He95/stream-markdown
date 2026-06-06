@@ -158,6 +158,34 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     }
   })
 
+  it('uses the global requestIdleCallback receiver when window has none', async () => {
+    const idleCallbacks: IdleRequestCallback[] = []
+
+    delete (window as any).requestIdleCallback
+    ;(globalThis as any).requestIdleCallback = function (this: unknown, cb: IdleRequestCallback) {
+      expect(this).toBe(globalThis)
+      idleCallbacks.push(cb)
+      return idleCallbacks.length
+    }
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      throttleMs: 0,
+    })
+
+    updater.update('global')
+    expect(idleCallbacks).toHaveLength(1)
+
+    idleCallbacks.shift()?.({ timeRemaining: () => 999, didTimeout: true } as IdleDeadline)
+    expect(container.querySelector('code')?.textContent).toBe('global')
+
+    updater.dispose()
+  })
+
   it('deduplicates multiple updates for the same container, only last applied', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

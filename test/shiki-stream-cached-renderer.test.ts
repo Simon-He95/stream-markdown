@@ -113,6 +113,44 @@ describe('createShikiStreamCachedRenderer', () => {
     renderer.dispose()
   })
 
+  it('does not create an extra line when CRLF is split across tokenizer tokens', async () => {
+    shikiStreamMock.enqueueResults.push({
+      recall: 0,
+      stable: [
+        {
+          content: 'first\r',
+          color: '#ff0000',
+          fontStyle: 0,
+        },
+        {
+          content: '\nsecond',
+          color: '#ff0000',
+          fontStyle: 0,
+        },
+      ],
+      unstable: [],
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+    })
+
+    await renderer.updateCode('first\r\nsecond')
+    await new Promise(r => setTimeout(r, 0))
+
+    const lines = container.querySelectorAll('code .line')
+    expect(lines).toHaveLength(2)
+    expect(lines[0].textContent).toBe('first')
+    expect(lines[1].textContent).toBe('second')
+
+    renderer.dispose()
+  })
+
   it('cancels stale pending token renders when a newer cached update starts', async () => {
     const origRaf = (globalThis as any).requestAnimationFrame
     const origCancelRaf = (globalThis as any).cancelAnimationFrame

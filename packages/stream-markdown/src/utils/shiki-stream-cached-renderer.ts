@@ -17,6 +17,19 @@ export interface ShikiStreamCachedRendererOptions extends ShikiStreamRendererOpt
 
 function tokensToLines(tokens: ThemedToken[]): ThemedToken[][] {
   const lines: ThemedToken[][] = [[]]
+  const appendContent = (token: ThemedToken, content: string, clone: boolean) => {
+    if (!content)
+      return
+
+    const normalized = content.includes('\r') ? content.replace(/\r/g, '') : content
+    if (!normalized)
+      return
+
+    lines[lines.length - 1].push(
+      clone || normalized !== token.content ? { ...token, content: normalized } : token,
+    )
+  }
+
   for (const token of tokens) {
     const content = token.content
     if (!content)
@@ -25,30 +38,17 @@ function tokensToLines(tokens: ThemedToken[]): ThemedToken[][] {
     let start = 0
     let split = false
     for (let i = 0; i < content.length; i++) {
-      const code = content.charCodeAt(i)
-      if (code !== 10 && code !== 13)
+      if (content.charCodeAt(i) !== 10)
         continue
 
-      split = true
-      if (i > start) {
-        lines[lines.length - 1].push({
-          ...token,
-          content: content.slice(start, i),
-        })
-      }
-
-      if (code === 13 && content.charCodeAt(i + 1) === 10)
-        i++
-
+      appendContent(token, content.slice(start, i), true)
       lines.push([])
       start = i + 1
+      split = true
     }
 
-    if (start < content.length) {
-      lines[lines.length - 1].push(
-        split ? { ...token, content: content.slice(start) } : token,
-      )
-    }
+    if (start < content.length)
+      appendContent(token, content.slice(start), split || start > 0)
   }
   return lines
 }
