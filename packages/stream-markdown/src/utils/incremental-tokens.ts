@@ -535,6 +535,12 @@ class TokenUpdateScheduler {
     this.handle = ric((deadline: any) => this.process(deadline))
   }
 
+  private stopObserving(container: HTMLElement) {
+    if (this.io)
+      this.io.unobserve(container)
+    this.visible.delete(container)
+  }
+
   private process(deadline: any) {
     this.handle = null
     // Process visible tasks first. Use an adaptive limit per idle callback to
@@ -614,6 +620,8 @@ class TokenUpdateScheduler {
         }
       }
 
+      this.stopObserving(task.container)
+
       // stop processing if time is low to keep UI responsive
       if (typeof deadline?.timeRemaining === 'function' && deadline.timeRemaining() < 6) {
         break
@@ -628,15 +636,13 @@ class TokenUpdateScheduler {
 
   cancelFor(container: HTMLElement) {
     const prev = this.byContainer.get(container)
-    if (!prev)
-      return
-    this.byContainer.delete(container)
-    const idx = this.queue.findIndex(t => t.id === prev.id)
-    if (idx !== -1)
-      this.queue.splice(idx, 1)
-    if (this.io)
-      this.io.unobserve(container)
-    this.visible.delete(container)
+    if (prev) {
+      this.byContainer.delete(container)
+      const idx = this.queue.findIndex(t => t.id === prev.id)
+      if (idx !== -1)
+        this.queue.splice(idx, 1)
+    }
+    this.stopObserving(container)
   }
 }
 

@@ -82,6 +82,36 @@ describe('createShikiStreamCachedRenderer', () => {
     }
   })
 
+  it('splits tokenizer tokens that contain embedded newlines', async () => {
+    shikiStreamMock.enqueueResults.push({
+      recall: 0,
+      stable: [{
+        content: 'first\nsecond',
+        color: '#ff0000',
+        fontStyle: 0,
+      }],
+      unstable: [],
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+    })
+
+    await renderer.updateCode('first\nsecond')
+
+    const lines = container.querySelectorAll('code .line')
+    expect(lines).toHaveLength(2)
+    expect(lines[0].textContent).toBe('first')
+    expect(lines[1].textContent).toBe('second')
+
+    renderer.dispose()
+  })
+
   it('renders pending token lines with their matching code snapshot', async () => {
     const origRaf = (globalThis as any).requestAnimationFrame
     const origCancelRaf = (globalThis as any).cancelAnimationFrame

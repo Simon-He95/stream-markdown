@@ -55,6 +55,61 @@ describe('updateCodeTokensIncremental', () => {
     expect(container.querySelectorAll('code .line').length).toBe(1)
   })
 
+  it('unobserves scheduled containers after the task runs', async () => {
+    vi.resetModules()
+
+    const origGlobalIO = (globalThis as any).IntersectionObserver
+    const origWindowIO = (window as any).IntersectionObserver
+    const origRic = (window as any).requestIdleCallback
+    const observe = vi.fn()
+    const unobserve = vi.fn()
+
+    class MockIntersectionObserver {
+      observe = observe
+      unobserve = unobserve
+    }
+
+    ;(globalThis as any).IntersectionObserver = MockIntersectionObserver
+    ;(window as any).IntersectionObserver = MockIntersectionObserver
+    ;(window as any).requestIdleCallback = (cb: IdleRequestCallback) => {
+      return window.setTimeout(() => cb({ timeRemaining: () => 999, didTimeout: true }), 0)
+    }
+
+    try {
+      const { createScheduledTokenIncrementalUpdater } = await import('../packages/stream-markdown/src/utils/incremental-tokens.js')
+      const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: 0,
+      })
+
+      updater.update('scheduled')
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(observe).toHaveBeenCalledWith(container)
+      expect(unobserve).toHaveBeenCalledWith(container)
+      updater.dispose()
+    }
+    finally {
+      if (origGlobalIO === undefined)
+        delete (globalThis as any).IntersectionObserver
+      else
+        (globalThis as any).IntersectionObserver = origGlobalIO
+
+      if (origWindowIO === undefined)
+        delete (window as any).IntersectionObserver
+      else
+        (window as any).IntersectionObserver = origWindowIO
+
+      if (origRic === undefined)
+        delete (window as any).requestIdleCallback
+      else
+        (window as any).requestIdleCallback = origRic
+
+      vi.resetModules()
+    }
+  })
+
   it('renders token styles with classes instead of inline styles', () => {
     updateCodeTokensIncremental(container, coloredHl as any, 'const', {
       lang: 'ts',
