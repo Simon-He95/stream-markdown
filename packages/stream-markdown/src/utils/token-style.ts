@@ -257,11 +257,22 @@ function appendStyleElement(root: TokenStyleRoot, styleElement: HTMLStyleElement
   root.appendChild(styleElement)
 }
 
+function isNodeInDocument(root: Document, node: Node): boolean {
+  if (typeof node.getRootNode === 'function')
+    return node.getRootNode() === root
+
+  const contains = (root as any).contains
+  if (typeof contains === 'function')
+    return contains.call(root, node)
+
+  return (node as any).ownerDocument === root && (node as any).isConnected === true
+}
+
 function isStyleElementMounted(root: TokenStyleRoot, styleElement: HTMLStyleElement): boolean {
   if (styleElement.ownerDocument !== getRootDocument(root))
     return false
   if (isDocumentRoot(root))
-    return styleElement.getRootNode() === root
+    return isNodeInDocument(root, styleElement)
   return styleElement.parentNode === root
 }
 

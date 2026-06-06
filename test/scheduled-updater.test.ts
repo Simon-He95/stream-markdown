@@ -410,6 +410,76 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     updater.dispose()
   })
 
+  it('invalidates a pending idle callback when scheduled work is cancelled', async () => {
+    vi.resetModules()
+
+    const origGlobalRIC = (globalThis as any).requestIdleCallback
+    const origGlobalCancelRIC = (globalThis as any).cancelIdleCallback
+    const origWindowRIC = (window as any).requestIdleCallback
+    const origWindowCancelRIC = (window as any).cancelIdleCallback
+    const idleCallbacks: IdleRequestCallback[] = []
+    const cancelIdleCallback = vi.fn()
+
+    ;(globalThis as any).requestIdleCallback = (cb: IdleRequestCallback) => {
+      idleCallbacks.push(cb)
+      return idleCallbacks.length
+    }
+    ;(globalThis as any).cancelIdleCallback = cancelIdleCallback
+    ;(window as any).requestIdleCallback = (globalThis as any).requestIdleCallback
+    ;(window as any).cancelIdleCallback = (globalThis as any).cancelIdleCallback
+
+    try {
+      const { createScheduledTokenIncrementalUpdater } = await import('../packages/stream-markdown/src/utils/incremental-tokens.js')
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+
+      const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: 0,
+      })
+
+      updater.update('stale')
+      updater.cancel?.()
+
+      expect(cancelIdleCallback).toHaveBeenCalledWith(1)
+
+      updater.update('fresh')
+      expect(idleCallbacks).toHaveLength(2)
+
+      idleCallbacks[0]?.({ didTimeout: true, timeRemaining: () => 999 } as IdleDeadline)
+      expect(container.querySelector('code')).toBeNull()
+
+      idleCallbacks[1]?.({ didTimeout: true, timeRemaining: () => 999 } as IdleDeadline)
+      expect(container.querySelector('code')?.textContent).toBe('fresh')
+
+      updater.dispose()
+    }
+    finally {
+      if (origGlobalRIC === undefined)
+        delete (globalThis as any).requestIdleCallback
+      else
+        (globalThis as any).requestIdleCallback = origGlobalRIC
+
+      if (origGlobalCancelRIC === undefined)
+        delete (globalThis as any).cancelIdleCallback
+      else
+        (globalThis as any).cancelIdleCallback = origGlobalCancelRIC
+
+      if (origWindowRIC === undefined)
+        delete (window as any).requestIdleCallback
+      else
+        (window as any).requestIdleCallback = origWindowRIC
+
+      if (origWindowCancelRIC === undefined)
+        delete (window as any).cancelIdleCallback
+      else
+        (window as any).cancelIdleCallback = origWindowCancelRIC
+
+      vi.resetModules()
+    }
+  })
+
   it('does not enable appendOnlyFastPath by default', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

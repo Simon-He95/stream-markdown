@@ -651,12 +651,17 @@ interface ScheduledTask {
   estNodes?: number
 }
 
+type IdleHandle = number | ReturnType<typeof setTimeout>
+
 class TokenUpdateScheduler {
   private queue: ScheduledTask[] = []
   private byContainer = new WeakMap<HTMLElement, ScheduledTask>()
   private visible = new WeakMap<HTMLElement, boolean>()
   private io: IntersectionObserver | null = null
   private idleScheduled = false
+  private idleHandle: IdleHandle | null = null
+  private idleCancel: ((handle: IdleHandle) => void) | null = null
+  private idleToken = 0
   private nextId = 1
 
   constructor() {
@@ -707,8 +712,28 @@ class TokenUpdateScheduler {
     return task.id
   }
 
+  private cancelIdle() {
+    if (!this.idleScheduled)
+      return
+
+    const handle = this.idleHandle
+    const cancel = this.idleCancel
+
+    this.idleToken++
+    this.idleScheduled = false
+    this.idleHandle = null
+    this.idleCancel = null
+
+    if (handle !== null && cancel) {
+      try {
+        cancel(handle)
+      }
+      catch {}
+    }
+  }
+
   private ensureProcessing() {
-    if (this.idleScheduled)
+    if (this.idleScheduled || this.queue.length === 0)
       return
 
     const globalScope = globalThis as any
@@ -721,16 +746,29 @@ class TokenUpdateScheduler {
     const ric = ricOwner?.requestIdleCallback
 
     this.idleScheduled = true
+    const token = ++this.idleToken
     let ranSynchronously = false
     const run = (deadline: any) => {
+      if (token !== this.idleToken)
+        return
+
       ranSynchronously = true
       this.idleScheduled = false
+      this.idleHandle = null
+      this.idleCancel = null
       this.process(deadline)
     }
 
     if (ric) {
       try {
-        ric.call(ricOwner, run)
+        const handle = ric.call(ricOwner, run, { timeout: 100 })
+        if (ranSynchronously)
+          return
+
+        this.idleHandle = handle
+        this.idleCancel = typeof ricOwner.cancelIdleCallback === 'function'
+          ? handle => ricOwner.cancelIdleCallback(handle)
+          : null
         return
       }
       catch {
@@ -739,7 +777,9 @@ class TokenUpdateScheduler {
       }
     }
 
-    setTimeout(() => run({ timeRemaining: () => 50, didTimeout: true }), 50)
+    const handle = setTimeout(() => run({ timeRemaining: () => 50, didTimeout: true }), 50)
+    this.idleHandle = handle
+    this.idleCancel = handle => clearTimeout(handle as ReturnType<typeof setTimeout>)
   }
 
   private stopObserving(container: HTMLElement) {
@@ -869,6 +909,9 @@ class TokenUpdateScheduler {
       if (idx !== -1)
         this.queue.splice(idx, 1)
     }
+    if (this.queue.length === 0)
+      this.cancelIdle()
+
     this.stopObserving(container)
   }
 }

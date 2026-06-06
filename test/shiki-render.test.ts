@@ -129,6 +129,35 @@ describe('renderCodeWithTokens', () => {
     }
   })
 
+  it('keeps an explicit document styleRoot mounted when nodes lack getRootNode', () => {
+    const originalDocument = (globalThis as any).document
+    const styleRoot = createDocumentStub()
+
+    try {
+      delete (globalThis as any).document
+
+      const opts = {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        styleRoot,
+        tokenStyleMode: 'class' as const,
+      }
+
+      renderCodeWithTokens(coloredHl as any, 'const a = 1', opts)
+      const html = renderCodeWithTokens(coloredHl as any, 'const b = 2', opts)
+
+      expect(html).toContain('class="smd-token-')
+      expect((styleRoot as any).querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+        .toContain('color: #ff0000;')
+    }
+    finally {
+      if (originalDocument === undefined)
+        delete (globalThis as any).document
+      else
+        (globalThis as any).document = originalDocument
+    }
+  })
+
   it('does not reuse cached HTML when explicit token lines are provided', () => {
     const opts = {
       lang: 'ts',
