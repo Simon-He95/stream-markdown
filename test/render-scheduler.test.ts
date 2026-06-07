@@ -155,6 +155,51 @@ describe('render scheduler', () => {
     }
   })
 
+  it('falls back to setTimeout when requestAnimationFrame cannot be cancelled', async () => {
+    const origGlobalRaf = (globalThis as any).requestAnimationFrame
+    const origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame
+    const origWindowRaf = (window as any).requestAnimationFrame
+    const origWindowCancelRaf = (window as any).cancelAnimationFrame
+    const requestAnimationFrame = vi.fn(() => 123)
+
+    try {
+      ;(globalThis as any).requestAnimationFrame = requestAnimationFrame
+      delete (globalThis as any).cancelAnimationFrame
+      ;(window as any).requestAnimationFrame = requestAnimationFrame
+      delete (window as any).cancelAnimationFrame
+
+      const order: string[] = []
+      scheduleRenderJob(() => order.push('run'))
+
+      resume()
+      await new Promise(resolve => setTimeout(resolve, 25))
+
+      expect(requestAnimationFrame).not.toHaveBeenCalled()
+      expect(order).toEqual(['run'])
+    }
+    finally {
+      if (origGlobalRaf === undefined)
+        delete (globalThis as any).requestAnimationFrame
+      else
+        (globalThis as any).requestAnimationFrame = origGlobalRaf
+
+      if (origGlobalCancelRaf === undefined)
+        delete (globalThis as any).cancelAnimationFrame
+      else
+        (globalThis as any).cancelAnimationFrame = origGlobalCancelRaf
+
+      if (origWindowRaf === undefined)
+        delete (window as any).requestAnimationFrame
+      else
+        (window as any).requestAnimationFrame = origWindowRaf
+
+      if (origWindowCancelRaf === undefined)
+        delete (window as any).cancelAnimationFrame
+      else
+        (window as any).cancelAnimationFrame = origWindowCancelRaf
+    }
+  })
+
   it('falls back to setTimeout when requestAnimationFrame throws', async () => {
     const origGlobalRaf = (globalThis as any).requestAnimationFrame
     const origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame

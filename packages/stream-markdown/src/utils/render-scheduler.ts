@@ -50,22 +50,23 @@ function getFrameScheduler(): {
 } {
   const globalScope = globalThis as any
   const win = typeof window !== 'undefined' ? (window as any) : null
-  const owner = typeof globalScope.requestAnimationFrame === 'function'
-    ? globalScope
-    : win && typeof win.requestAnimationFrame === 'function'
-      ? win
-      : null
+  const candidates = [globalScope, win].filter(Boolean)
 
-  if (owner) {
-    return {
-      request: cb => owner.requestAnimationFrame(cb),
-      cancel: id => owner.cancelAnimationFrame?.(id),
+  for (const owner of candidates) {
+    if (
+      typeof owner.requestAnimationFrame === 'function'
+      && typeof owner.cancelAnimationFrame === 'function'
+    ) {
+      return {
+        request: cb => owner.requestAnimationFrame(cb),
+        cancel: id => owner.cancelAnimationFrame(id as number),
+      }
     }
   }
 
   return {
     request: cb => setTimeout(() => cb(now()), 16),
-    cancel: id => clearTimeout(id),
+    cancel: id => clearTimeout(id as ReturnType<typeof setTimeout>),
   }
 }
 

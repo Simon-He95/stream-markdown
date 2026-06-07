@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
+import { createTokenIncrementalUpdater, renderCodeWithTokens, updateCodeTokensIncremental } from 'stream-markdown'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createTokenIncrementalUpdater, updateCodeTokensIncremental } from '../packages/stream-markdown/src/utils/incremental-tokens.js'
-import { renderCodeWithTokens } from '../packages/stream-markdown/src/utils/shiki-render.js'
 import { normalizeCssColor } from '../packages/stream-markdown/src/utils/token-style.js'
 import { streamContent as tsMarkdown } from '../src/pages/markdown.js'
 import { markdownContent } from '../src/samples/content-markdown.js'
@@ -387,6 +386,18 @@ describe('updateCodeTokensIncremental', () => {
         .toBe('')
       expect(normalizeCssColor('rgb(255, 0, 0)'))
         .toBe('rgb(255, 0, 0)')
+      expect(normalizeCssColor('#123'))
+        .toBe('#123')
+      expect(normalizeCssColor('#1234'))
+        .toBe('#1234')
+      expect(normalizeCssColor('#123456'))
+        .toBe('#123456')
+      expect(normalizeCssColor('#12345678'))
+        .toBe('#12345678')
+      expect(normalizeCssColor('#12345'))
+        .toBe('')
+      expect(normalizeCssColor('#1234567'))
+        .toBe('')
     }
     finally {
       if (originalCSS === undefined) {

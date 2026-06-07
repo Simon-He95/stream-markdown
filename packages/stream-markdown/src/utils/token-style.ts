@@ -1,6 +1,6 @@
 export type TokenStyleMode = 'inline' | 'class'
 
-const SIMPLE_COLOR_RE = /^#[\da-f]{3,8}$/i
+const SIMPLE_COLOR_RE = /^#(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i
 const COLOR_KEYWORD_RE = /^[a-z][a-z0-9-]*$/i
 const CSS_VAR_NAME_RE = /^--[\w-]+$/
 const SAFE_CSS_FUNCTION_NAMES = new Set([
