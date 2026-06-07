@@ -1,7 +1,7 @@
 import type { TokenIncrementalOptions, TokenIncrementalUpdater } from './incremental-tokens.js'
 import type { ThemedToken } from './shiki-render.js'
 import type { ShikiStreamRendererOptions } from './shiki-stream-renderer.js'
-import { ShikiStreamTokenizer } from '@shikijs/stream'
+import { ShikiStreamTokenizer } from 'shiki-stream'
 import { registerHighlight } from './highlight.js'
 import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
@@ -10,51 +10,84 @@ import { observeElement } from './shared-intersection-observer.js'
 export interface ShikiStreamCachedRendererOptions extends ShikiStreamRendererOptions {
   /**
    * If true (default), attempt to reuse Shiki grammar state for appended
-   * content via @shikijs/stream. Set to false to always retokenize from scratch.
+   * content via shiki-stream. Set to false to always retokenize from scratch.
    */
   useGrammarState?: boolean
 }
 
 function tokensToLines(tokens: ThemedToken[]): ThemedToken[][] {
   const lines: ThemedToken[][] = [[]]
-  const appendContent = (token: ThemedToken, content: string, clone: boolean) => {
+  let pendingCR = false
+
+  const appendContent = (token: ThemedToken, content: string) => {
     if (!content)
       return
 
-    const normalized = content.includes('\r') ? content.replace(/\r/g, '') : content
-    if (!normalized)
-      return
-
     lines[lines.length - 1].push(
-      clone || normalized !== token.content ? { ...token, content: normalized } : token,
+      content === token.content ? token : { ...token, content },
     )
   }
 
   for (const token of tokens) {
-    const content = token.content
+    let content = token.content
     if (!content)
       continue
 
-    let start = 0
-    let split = false
-    for (let i = 0; i < content.length; i++) {
-      if (content.charCodeAt(i) !== 10)
-        continue
+    // Previous token ended with \r. Treat the current leading \n as the LF part
+    // of a CRLF pair; otherwise drop the lone \r to match the renderer's CR
+    // normalization.
+    if (pendingCR) {
+      pendingCR = false
 
-      appendContent(token, content.slice(start, i), true)
-      lines.push([])
-      start = i + 1
-      split = true
+      if (content.charCodeAt(0) === 10) {
+        lines.push([])
+        content = content.slice(1)
+
+        if (!content)
+          continue
+      }
     }
 
-    if (start < content.length)
-      appendContent(token, content.slice(start), split || start > 0)
+    let start = 0
+
+    for (let i = 0; i < content.length; i++) {
+      const ch = content.charCodeAt(i)
+
+      if (ch !== 10 && ch !== 13)
+        continue
+
+      appendContent(token, content.slice(start, i))
+
+      if (ch === 13) {
+        // CRLF inside the same token.
+        if (i + 1 < content.length && content.charCodeAt(i + 1) === 10) {
+          lines.push([])
+          i++
+        }
+        // CR at token boundary. Wait for the next token to see whether it starts
+        // with LF.
+        else if (i === content.length - 1) {
+          pendingCR = true
+        }
+        // Lone CR in the middle of a token is dropped, consistent with escapeHtml.
+
+        start = i + 1
+        continue
+      }
+
+      // LF.
+      lines.push([])
+      start = i + 1
+    }
+
+    appendContent(token, content.slice(start))
   }
+
   return lines
 }
 
 /**
- * Renderer that reuses @shikijs/stream's tokenizer (grammarState-aware) to avoid
+ * Renderer that reuses shiki-stream's tokenizer (grammarState-aware) to avoid
  * re-tokenizing stable prefixes when code arrives incrementally.
  *
  * API mirrors createShikiStreamRenderer: updateCode(lang?), setTheme, dispose.

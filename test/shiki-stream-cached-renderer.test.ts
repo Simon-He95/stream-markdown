@@ -7,7 +7,7 @@ const shikiStreamMock = vi.hoisted(() => ({
   enqueueResults: [] as any[],
 }))
 
-vi.mock('@shikijs/stream', () => ({
+vi.mock('shiki-stream', () => ({
   ShikiStreamTokenizer: class {
     enqueue = vi.fn(async () => shikiStreamMock.enqueueResults.shift() ?? { recall: 0, stable: [], unstable: [] })
     clear = vi.fn()

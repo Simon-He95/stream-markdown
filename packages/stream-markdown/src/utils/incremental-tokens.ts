@@ -255,7 +255,7 @@ export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' 
    * Optional precomputed token lines. When provided, the highlighter will NOT
    * be invoked and these tokens will be used directly (after padding to match
    * the code's line count). Useful for callers that cache grammar state (e.g.,
-   * @shikijs/stream) and want to avoid re-tokenizing identical prefixes.
+   * shiki-stream) and want to avoid re-tokenizing identical prefixes.
    */
   tokenLines?: ThemedToken[][]
   onResult?: (result: UpdateResult) => void

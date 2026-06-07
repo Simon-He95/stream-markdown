@@ -16,10 +16,10 @@ pnpm add stream-markdown shiki
 
 - registerHighlight(options?): Ensure a shared Shiki highlighter with given langs/themes is available.
 - renderCodeWithTokens(highlighter, code, opts): Render <pre><code> HTML with .line spans from tokens. `opts.tokenCache` / `opts.tokenCacheMaxEntries` control token caching; `opts.htmlCache` / `opts.htmlCacheMaxEntries` control full HTML caching.
-- updateCodeTokensIncremental(container, highlighter, code, opts): Incrementally update DOM with tokens; falls back to full render on divergence. `opts.compareMode` can be `'signature'` (default) or `'innerHTML'`. Accepts optional `tokenLines` to reuse precomputed tokens (e.g., from @shikijs/stream) instead of re-tokenizing. `opts.tokenCache` / `opts.tokenCacheMaxEntries` control token caching; `opts.htmlCache` / `opts.htmlCacheMaxEntries` control full HTML caching.
+- updateCodeTokensIncremental(container, highlighter, code, opts): Incrementally update DOM with tokens; falls back to full render on divergence. `opts.compareMode` can be `'signature'` (default) or `'innerHTML'`. Accepts optional `tokenLines` to reuse precomputed tokens (e.g., from shiki-stream) instead of re-tokenizing. `opts.tokenCache` / `opts.tokenCacheMaxEntries` control token caching; `opts.htmlCache` / `opts.htmlCacheMaxEntries` control full HTML caching.
 - createTokenIncrementalUpdater(container, highlighter, opts): Factory returning { update, reset, dispose } optimized for streaming.
 - createScheduledTokenIncrementalUpdater(container, highlighter, opts): Like `createTokenIncrementalUpdater` but defers DOM/token updates to idle time and prioritizes visible containers. `update(code)` is asynchronous (returns synchronously with 'noop'); final result is reported via `opts.onResult` when the scheduled task runs.
-- createShikiStreamCachedRenderer(container, opts): Same surface as `createShikiStreamRenderer` but uses @shikijs/stream's grammarState-aware tokenizer to avoid re-tokenizing stable prefixes; opt-out via `useGrammarState: false`.
+- createShikiStreamCachedRenderer(container, opts): Same surface as `createShikiStreamRenderer` but uses shiki-stream's grammarState-aware tokenizer to avoid re-tokenizing stable prefixes; opt-out via `useGrammarState: false`.
 
 Example (observe final result via onResult):
 
