@@ -210,6 +210,37 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     updater.dispose()
   })
 
+  it('ignores a stale idle callback queued before requestIdleCallback throws', async () => {
+    const idleCallbacks: IdleRequestCallback[] = []
+    const throwingRic = (cb: IdleRequestCallback) => {
+      idleCallbacks.push(cb)
+      throw new Error('closed frame')
+    }
+
+    ;(globalThis as any).requestIdleCallback = throwingRic
+    ;(window as any).requestIdleCallback = throwingRic
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      throttleMs: 0,
+    })
+
+    updater.update('fallback')
+    expect(idleCallbacks).toHaveLength(1)
+
+    idleCallbacks[0]?.({ timeRemaining: () => 999, didTimeout: true } as IdleDeadline)
+    expect(container.querySelector('code')).toBeNull()
+
+    await new Promise(resolve => setTimeout(resolve, 60))
+
+    expect(container.querySelector('code')?.textContent).toBe('fallback')
+    updater.dispose()
+  })
+
   it('deduplicates multiple updates for the same container, only last applied', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

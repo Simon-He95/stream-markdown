@@ -115,8 +115,18 @@ function ensureFrame() {
   catch {
     if (ranSynchronously)
       return
-    rafId = setTimeout(run, 16)
-    cancelScheduledFrame = id => clearTimeout(id)
+
+    const fallbackToken = ++frameToken
+    const fallbackRun: FrameRequestCallback = () => {
+      if (fallbackToken !== frameToken)
+        return
+
+      ranSynchronously = true
+      runFrame()
+    }
+
+    rafId = setTimeout(fallbackRun, 16)
+    cancelScheduledFrame = id => clearTimeout(id as ReturnType<typeof setTimeout>)
   }
 }
 

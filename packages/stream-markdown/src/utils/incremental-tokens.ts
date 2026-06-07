@@ -954,7 +954,19 @@ class TokenUpdateScheduler {
       }
     }
 
-    const handle = setTimeout(() => run({ timeRemaining: () => 50, didTimeout: true }), 50)
+    const fallbackToken = ++this.idleToken
+    const fallbackRun = (deadline: any) => {
+      if (fallbackToken !== this.idleToken)
+        return
+
+      ranSynchronously = true
+      this.idleScheduled = false
+      this.idleHandle = null
+      this.idleCancel = null
+      this.process(deadline)
+    }
+
+    const handle = setTimeout(() => fallbackRun({ timeRemaining: () => 50, didTimeout: true }), 50)
     this.idleHandle = handle
     this.idleCancel = handle => clearTimeout(handle as ReturnType<typeof setTimeout>)
   }
