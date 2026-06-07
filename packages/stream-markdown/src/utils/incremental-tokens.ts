@@ -98,6 +98,29 @@ function getThemeBackgroundColor(highlighter: Highlighter, theme: string): strin
   }
 }
 
+function getClassAttribute(el: Element): string {
+  return el.getAttribute('class') ?? ''
+}
+
+function hasExpectedRenderedShell(
+  container: HTMLElement,
+  codeEl: HTMLElement,
+  options: {
+    preClass: string
+    codeClass: string
+  },
+): boolean {
+  const preEl = codeEl.parentElement
+
+  return !!preEl
+    && preEl.tagName.toLowerCase() === 'pre'
+    && preEl.parentElement === container
+    && container.childNodes.length === 1
+    && container.firstChild === preEl
+    && getClassAttribute(preEl) === options.preClass
+    && getClassAttribute(codeEl) === options.codeClass
+}
+
 function clearContainerRenderState(container: HTMLElement): void {
   LAST_CODE.delete(container)
   RENDER_SIGNATURES.delete(container)
@@ -480,6 +503,8 @@ export function updateCodeTokensIncremental(
     ensureIncrementalTokenStyleSheet(styleRoot, tokenStyleMode)
   if (!codeEl)
     return renderFull()
+  if (!hasExpectedRenderedShell(container, codeEl, { preClass, codeClass }))
+    return renderFull()
 
   const previousSignature = RENDER_SIGNATURES.get(container)
   if (previousSignature !== signature)
@@ -725,22 +750,28 @@ export function createTokenIncrementalUpdater(
       const hasProvidedTokenLines = tokenLines !== undefined
       const skipSame = !hasProvidedTokenLines && !lastUpdateUsedProvidedTokenLines && opts.skipSameCode !== false
       if (skipSame && lastCode === code) {
-        const codeEl = target.querySelector('code')
+        const codeEl = target.querySelector('code') as HTMLElement | null
         const styleRoot = getIncrementalStyleRoot(opts, target)
         const tokenStyleMode = resolveIncrementalTokenStyleMode(opts, styleRoot)
+        const preClass = opts.preClass ?? 'shiki'
+        const codeClass = opts.codeClass ?? ''
+        const lineClass = opts.lineClass ?? 'line'
+        const showLineNumbers = opts.showLineNumbers ?? false
+        const startingLineNumber = normalizeStartingLineNumber(opts.startingLineNumber ?? 1)
         const signature = renderSignature({
           lang: opts.lang,
           theme: opts.theme,
           backgroundColor: getThemeBackgroundColor(highlighter, opts.theme),
           tokenStyleMode,
-          preClass: opts.preClass ?? 'shiki',
-          codeClass: opts.codeClass ?? '',
-          lineClass: opts.lineClass ?? 'line',
-          showLineNumbers: opts.showLineNumbers ?? false,
-          startingLineNumber: normalizeStartingLineNumber(opts.startingLineNumber ?? 1),
+          preClass,
+          codeClass,
+          lineClass,
+          showLineNumbers,
+          startingLineNumber,
         })
         if (
           codeEl
+          && hasExpectedRenderedShell(target, codeEl, { preClass, codeClass })
           && RENDER_SIGNATURES.get(target) === signature
           && hasUnchangedRenderedCodeDom(target, codeEl)
           && (codeEl.textContent ?? '').replace(/\r/g, '') === code.replace(/\r/g, '')
@@ -1134,22 +1165,30 @@ export function createScheduledTokenIncrementalUpdater(
     if (lastCode !== code)
       return false
 
-    const codeEl = target.querySelector('code')
+    const codeEl = target.querySelector('code') as HTMLElement | null
     if (!codeEl)
+      return false
+
+    const preClass = opts.preClass ?? 'shiki'
+    const codeClass = opts.codeClass ?? ''
+    if (!hasExpectedRenderedShell(target, codeEl, { preClass, codeClass }))
       return false
 
     const styleRoot = getIncrementalStyleRoot(opts, target)
     const tokenStyleMode = resolveIncrementalTokenStyleMode(opts, styleRoot)
+    const lineClass = opts.lineClass ?? 'line'
+    const showLineNumbers = opts.showLineNumbers ?? false
+    const startingLineNumber = normalizeStartingLineNumber(opts.startingLineNumber ?? 1)
     const signature = renderSignature({
       lang: opts.lang,
       theme: opts.theme,
       backgroundColor: getThemeBackgroundColor(highlighter, opts.theme),
       tokenStyleMode,
-      preClass: opts.preClass ?? 'shiki',
-      codeClass: opts.codeClass ?? '',
-      lineClass: opts.lineClass ?? 'line',
-      showLineNumbers: opts.showLineNumbers ?? false,
-      startingLineNumber: normalizeStartingLineNumber(opts.startingLineNumber ?? 1),
+      preClass,
+      codeClass,
+      lineClass,
+      showLineNumbers,
+      startingLineNumber,
     })
 
     if (RENDER_SIGNATURES.get(target) !== signature)

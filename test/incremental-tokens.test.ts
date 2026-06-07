@@ -589,6 +589,31 @@ describe('updateCodeTokensIncremental', () => {
     expect(lines[1].textContent).toBe('b')
   })
 
+  it('repairs externally mutated pre/code shell on updater same-code calls', () => {
+    const updater = createSourceTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      preClass: 'expected-pre',
+      codeClass: 'expected-code',
+    })
+
+    updater.update('same')
+
+    const pre = container.querySelector('pre') as HTMLElement
+    const code = container.querySelector('code') as HTMLElement
+    pre.className = 'broken-pre'
+    code.className = 'broken-code'
+
+    const result = updater.update('same')
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.className).toBe('expected-pre')
+    expect(container.querySelector('code')?.className).toBe('expected-code')
+    expect(container.querySelector('code')?.textContent).toBe('same')
+
+    updater.dispose()
+  })
+
   it('supports an empty lineClass without duplicating stale lines', () => {
     updateCodeTokensIncremental(container, hl as any, 'a', {
       lang: 'ts',

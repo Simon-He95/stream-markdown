@@ -2,7 +2,9 @@
 // per-frame time budget to avoid freezing the main thread when many renderers
 // request updates at once (e.g., when restoring history).
 
-const queue: Array<() => void> = []
+type RenderJob = () => void
+const highQueue: RenderJob[] = []
+const normalQueue: RenderJob[] = []
 type FrameHandle = number | ReturnType<typeof setTimeout>
 
 let rafId: FrameHandle | null = null
@@ -27,7 +29,7 @@ export function isPaused() {
 }
 
 export function getQueueLength() {
-  return queue.length
+  return highQueue.length + normalQueue.length
 }
 
 export function pause() {
@@ -44,6 +46,35 @@ export function resume() {
 
 function now() {
   return globalThis.performance?.now ? globalThis.performance.now() : Date.now()
+}
+
+function hasQueuedJobs() {
+  return highQueue.length > 0 || normalQueue.length > 0
+}
+
+function shiftQueuedJob(): RenderJob | undefined {
+  return highQueue.shift() ?? normalQueue.shift()
+}
+
+function removeQueuedJob(job: RenderJob): boolean {
+  let idx = highQueue.indexOf(job)
+  if (idx >= 0) {
+    highQueue.splice(idx, 1)
+    return true
+  }
+
+  idx = normalQueue.indexOf(job)
+  if (idx >= 0) {
+    normalQueue.splice(idx, 1)
+    return true
+  }
+
+  return false
+}
+
+function clearQueues() {
+  highQueue.length = 0
+  normalQueue.length = 0
 }
 
 function getFrameScheduler(): {
@@ -92,7 +123,7 @@ function ensureFrame() {
     return
   if (paused)
     return
-  if (queue.length === 0)
+  if (!hasQueuedJobs())
     return
   const scheduler = getFrameScheduler()
   const token = ++frameToken
@@ -138,8 +169,8 @@ function runFrame() {
     return
 
   const start = now()
-  while (queue.length > 0) {
-    const job = queue.shift()!
+  while (hasQueuedJobs()) {
+    const job = shiftQueuedJob()!
     try {
       job()
     }
@@ -154,7 +185,7 @@ function runFrame() {
       break
     }
   }
-  if (queue.length > 0)
+  if (hasQueuedJobs())
     ensureFrame()
 }
 
@@ -171,19 +202,17 @@ export function scheduleRenderJob(job: () => void, options?: { priority?: 'high'
   }
 
   if (priority === 'high')
-    queue.unshift(wrappedJob)
+    highQueue.push(wrappedJob)
   else
-    queue.push(wrappedJob)
+    normalQueue.push(wrappedJob)
 
   ensureFrame()
   return () => {
     if (cancelled)
       return
     cancelled = true
-    const idx = queue.indexOf(wrappedJob)
-    if (idx >= 0) {
-      queue.splice(idx, 1)
-      if (queue.length === 0)
+    if (removeQueuedJob(wrappedJob)) {
+      if (!hasQueuedJobs())
         cancelFrame()
     }
   }
@@ -204,8 +233,8 @@ export function runImmediate(job: () => void) {
 export function drain() {
   // If a frame is scheduled, cancel it — we'll run everything synchronously.
   cancelFrame()
-  while (queue.length > 0) {
-    const job = queue.shift()!
+  while (hasQueuedJobs()) {
+    const job = shiftQueuedJob()!
     try {
       job()
     }
@@ -217,6 +246,6 @@ export function drain() {
  * Clear all pending jobs and cancel the next frame. Used for cleanup.
  */
 export function clearAll() {
-  queue.length = 0
+  clearQueues()
   cancelFrame()
 }

@@ -267,8 +267,10 @@ export function createShikiStreamCachedRenderer(
     const codeChanged = code !== currentCode
 
     if (!codeChanged && !langChanged) {
-      if (updater)
+      if (updater) {
+        cancelPendingRender()
         scheduleBufferedRender(code)
+      }
       return
     }
 

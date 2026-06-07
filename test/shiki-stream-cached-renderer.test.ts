@@ -387,4 +387,59 @@ describe('createShikiStreamCachedRenderer', () => {
       vi.resetModules()
     }
   })
+
+  it('does not run a stale same-code cached renderer job after rescheduling', async () => {
+    const jobs: Array<() => void> = []
+
+    vi.resetModules()
+    vi.doMock('../packages/stream-markdown/src/utils/render-scheduler.js', () => ({
+      scheduleRenderJob: vi.fn((job: () => void) => {
+        jobs.push(job)
+        return vi.fn()
+      }),
+      setTimeBudget: vi.fn(),
+    }))
+
+    let renderer: ReturnType<typeof createShikiStreamCachedRenderer> | null = null
+
+    try {
+      const { createShikiStreamCachedRenderer: createMockedRenderer } = await import('../packages/stream-markdown/src/utils/shiki-stream-cached-renderer.js')
+
+      ;(window as any).requestIdleCallback = (cb: IdleRequestCallback) => {
+        cb({ timeRemaining: () => 999, didTimeout: true } as IdleDeadline)
+        return 1
+      }
+      ;(window as any).cancelIdleCallback = vi.fn()
+
+      shikiStreamMock.enqueueResults.push({
+        recall: 0,
+        stable: [{ content: 'same' }],
+        unstable: [],
+      })
+
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+      renderer = createMockedRenderer(container, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: 0,
+      })
+
+      await renderer.updateCode('same')
+      await renderer.updateCode('same')
+
+      expect(jobs).toHaveLength(2)
+
+      jobs[0]()
+      expect(container.querySelector('code')).toBeNull()
+
+      jobs[1]()
+      expect(container.querySelector('code')?.textContent).toBe('same')
+    }
+    finally {
+      renderer?.dispose()
+      vi.doUnmock('../packages/stream-markdown/src/utils/render-scheduler.js')
+      vi.resetModules()
+    }
+  })
 })

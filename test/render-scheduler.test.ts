@@ -8,6 +8,19 @@ describe('render scheduler', () => {
     pause()
   })
 
+  it('keeps high priority jobs FIFO while still running them before normal jobs', () => {
+    const order: string[] = []
+
+    scheduleRenderJob(() => order.push('normal-1'))
+    scheduleRenderJob(() => order.push('high-1'), { priority: 'high' })
+    scheduleRenderJob(() => order.push('high-2'), { priority: 'high' })
+    scheduleRenderJob(() => order.push('normal-2'))
+
+    drain()
+
+    expect(order).toEqual(['high-1', 'high-2', 'normal-1', 'normal-2'])
+  })
+
   afterEach(() => {
     resume()
     clearAll()

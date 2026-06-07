@@ -572,6 +572,39 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     updater.dispose()
   })
 
+  it('repairs externally mutated pre/code shell on same-code scheduled updates', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const results: string[] = []
+    const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      preClass: 'expected-pre',
+      codeClass: 'expected-code',
+      throttleMs: 0,
+      onResult: result => results.push(result),
+    })
+
+    updater.update('same')
+    await new Promise(r => setTimeout(r, 0))
+
+    const pre = container.querySelector('pre') as HTMLElement
+    const code = container.querySelector('code') as HTMLElement
+    pre.className = 'broken-pre'
+    code.className = 'broken-code'
+
+    updater.update('same')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(results).toEqual(['full', 'full'])
+    expect(container.querySelector('pre')?.className).toBe('expected-pre')
+    expect(container.querySelector('code')?.className).toBe('expected-code')
+    expect(container.querySelector('code')?.textContent).toBe('same')
+
+    updater.dispose()
+  })
+
   // Note: starvation regression is covered by integration manual testing due to
   // jsdom/requestIdleCallback variability across environments.
 })
