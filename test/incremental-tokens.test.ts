@@ -479,6 +479,48 @@ describe('updateCodeTokensIncremental', () => {
     expect(lines[1].textContent).toBe('b')
   })
 
+  it('supports an empty lineClass without duplicating stale lines', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: '',
+    })
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: '',
+    })
+
+    expect(result).toBe('incremental')
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+    expect(container.querySelectorAll('code > span')).toHaveLength(1)
+  })
+
+  it('only treats direct code children as rendered lines', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: 'line-number',
+      showLineNumbers: true,
+    })
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: 'line-number',
+      showLineNumbers: true,
+    })
+
+    expect(result).toBe('incremental')
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+
+    // The outer line is the direct child. The nested `.line-number` is only the
+    // gutter marker and must not be counted as another rendered line.
+    expect(container.querySelectorAll('code > .line-number')).toHaveLength(1)
+    expect(container.querySelectorAll('code > .line-number > .line-number')).toHaveLength(1)
+  })
+
   it('does not let reentrant onResult leave stale append-only state', () => {
     let reentered = false
     const updaterRef = {} as { current: ReturnType<typeof createTokenIncrementalUpdater> }

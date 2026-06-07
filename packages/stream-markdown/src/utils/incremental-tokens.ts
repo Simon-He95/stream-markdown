@@ -119,6 +119,25 @@ function ensureIncrementalTokenStyleSheet(styleRoot: Node | null, tokenStyleMode
     ensureTokenStyleSheet(styleRoot)
 }
 
+function splitClassNames(className: string): string[] {
+  return className.trim().split(/\s+/).filter(Boolean)
+}
+
+function getCodeLineElements(codeEl: HTMLElement, lineClass: string): HTMLElement[] {
+  const lines = Array.from(codeEl.children) as HTMLElement[]
+  const classNames = splitClassNames(lineClass)
+
+  // `lineClass: ''` is a valid public option. In that case, the rendered line
+  // nodes are still the direct children of <code>, but getElementsByClassName('')
+  // cannot identify them and causes stale/duplicated lines during incremental updates.
+  if (classNames.length === 0)
+    return lines
+
+  // Only direct <code> children are rendered lines. Nested `.line-number` spans
+  // or token spans must not be counted as lines even if class names collide.
+  return lines.filter(el => classNames.every(className => el.classList.contains(className)))
+}
+
 function lineInnerHtml(
   tokens: ThemedToken[],
   showLineNumbers: boolean,
@@ -378,7 +397,7 @@ export function updateCodeTokensIncremental(
   if (previousSignature !== signature)
     return renderFull()
 
-  const oldLines = codeEl.getElementsByClassName(lineClass) as HTMLCollectionOf<HTMLElement>
+  const oldLines = getCodeLineElements(codeEl, lineClass)
   const tokenLines = providedTokenLines
     ? normalizeTokenLinesForCode(providedTokenLines, code, true)
     : normalizeTokenLinesForCode(getTokenLines(highlighter, code, lang, theme, {
