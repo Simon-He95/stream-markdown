@@ -191,12 +191,27 @@ function hashSignaturePart(hash: number, value: string): number {
   return next >>> 0
 }
 
-function lineSignature(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber?: number): string {
+function hashSignaturePart2(hash: number, value: string): number {
+  let next = hash >>> 0
+
+  for (let i = 0; i < value.length; i++)
+    next = (Math.imul(next, 33) ^ value.charCodeAt(i)) >>> 0
+
+  return next >>> 0
+}
+
+function lineSignature(
+  tokens: ThemedToken[],
+  showLineNumbers: boolean,
+  lineNumber: number | undefined,
+  tokenStyleMode: TokenStyleMode,
+): string {
   const lineNumberKey = showLineNumbers && typeof lineNumber === 'number'
     ? String(lineNumber)
     : ''
 
-  let hash = hashSignaturePart(0x811C9DC5, `#${lineNumberKey}|`)
+  let hash = hashSignaturePart(0x811C9DC5, `${tokenStyleMode}#${lineNumberKey}|`)
+  let hash2 = hashSignaturePart2(0x1505, `${tokenStyleMode}#${lineNumberKey}|`)
   let totalLength = 0
   let segmentCount = 0
   let i = 0
@@ -207,23 +222,30 @@ function lineSignature(tokens: ThemedToken[], showLineNumbers: boolean, lineNumb
 
     hash = hashSignaturePart(hash, style)
     hash = hashSignaturePart(hash, '\0')
+    hash2 = hashSignaturePart2(hash2, style)
+    hash2 = hashSignaturePart2(hash2, '\0')
 
     while (i < tokens.length) {
       const token = tokens[i]
-      if (getTokenStyleSignature(token.color, token.fontStyle) !== style)
-        break
 
       hash = hashSignaturePart(hash, token.content)
+      hash2 = hashSignaturePart2(hash2, token.content)
       segmentLength += token.content.length
       i++
+
+      if (tokenStyleMode !== 'class')
+        break
+      if (i >= tokens.length || getTokenStyleSignature(tokens[i].color, tokens[i].fontStyle) !== style)
+        break
     }
 
     hash = hashSignaturePart(hash, `\u0001${segmentLength}\u0002`)
+    hash2 = hashSignaturePart2(hash2, `\u0001${segmentLength}\u0002`)
     totalLength += segmentLength
     segmentCount++
   }
 
-  return `${lineNumberKey}:${segmentCount}:${totalLength}:${hash.toString(36)}`
+  return `${lineNumberKey}:${segmentCount}:${totalLength}:${hash.toString(36)}:${hash2.toString(36)}`
 }
 
 /**
@@ -420,7 +442,7 @@ export function updateCodeTokensIncremental(
       const lastIdx = oldLen - 1
       const lineNumber = showLineNumbers ? (startingLineNumber + lastIdx) : undefined
       const sig = compareMode === 'signature'
-        ? lineSignature(tokenLines[lastIdx], showLineNumbers, lineNumber)
+        ? lineSignature(tokenLines[lastIdx], showLineNumbers, lineNumber, tokenStyleMode)
         : undefined
       const newLineEl = createLineElement(
         tokenLines[lastIdx],
@@ -444,7 +466,7 @@ export function updateCodeTokensIncremental(
           frag.appendChild(ownerDocument.createTextNode('\n'))
           const lineNumber = showLineNumbers ? ln : undefined
           const sig = compareMode === 'signature'
-            ? lineSignature(tokenLines[j], showLineNumbers, lineNumber)
+            ? lineSignature(tokenLines[j], showLineNumbers, lineNumber, tokenStyleMode)
             : undefined
           const span = createLineElement(
             tokenLines[j],
@@ -473,7 +495,7 @@ export function updateCodeTokensIncremental(
     const lineNumber = showLineNumbers ? currentLineNumber : undefined
     const oldLine = oldLines[idx]
     if (compareMode === 'signature') {
-      const sig = lineSignature(tokenLines[idx], showLineNumbers, lineNumber)
+      const sig = lineSignature(tokenLines[idx], showLineNumbers, lineNumber, tokenStyleMode)
       const oldSig = LINE_SIGNATURES.get(oldLine)
       if (oldSig) {
         if (oldSig !== sig) {
@@ -509,7 +531,9 @@ export function updateCodeTokensIncremental(
         // Insert a newline separator before each appended line to match Shiki's codeToHtml
         frag.appendChild(ownerDocument.createTextNode('\n'))
         const lineNumber = showLineNumbers ? ln : undefined
-        const sig = compareMode === 'signature' ? lineSignature(tokenLines[j], showLineNumbers, lineNumber) : undefined
+        const sig = compareMode === 'signature'
+          ? lineSignature(tokenLines[j], showLineNumbers, lineNumber, tokenStyleMode)
+          : undefined
         const span = createLineElement(
           tokenLines[j],
           showLineNumbers,
@@ -537,7 +561,9 @@ export function updateCodeTokensIncremental(
   // Divergence at or after last existing line -> update that line and append others
   if (divergeAt >= oldLen - 1) {
     const lineNumber = showLineNumbers ? (startingLineNumber + divergeAt) : undefined
-    const sig = compareMode === 'signature' ? lineSignature(tokenLines[divergeAt], showLineNumbers, lineNumber) : undefined
+    const sig = compareMode === 'signature'
+      ? lineSignature(tokenLines[divergeAt], showLineNumbers, lineNumber, tokenStyleMode)
+      : undefined
     const newLineEl = createLineElement(
       tokenLines[divergeAt],
       showLineNumbers,
@@ -561,7 +587,9 @@ export function updateCodeTokensIncremental(
         // Maintain newline separators between .line spans to match codeToHtml
         frag.appendChild(ownerDocument.createTextNode('\n'))
         const lineNumber = showLineNumbers ? ln : undefined
-        const sig = compareMode === 'signature' ? lineSignature(tokenLines[j], showLineNumbers, lineNumber) : undefined
+        const sig = compareMode === 'signature'
+          ? lineSignature(tokenLines[j], showLineNumbers, lineNumber, tokenStyleMode)
+          : undefined
         const span = createLineElement(
           tokenLines[j],
           showLineNumbers,

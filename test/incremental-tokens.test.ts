@@ -178,6 +178,44 @@ describe('updateCodeTokensIncremental', () => {
     expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
   })
 
+  it('does not treat changed inline token boundaries as a signature noop', () => {
+    const unsplitTokens = [[
+      { content: 'ab', color: '#ff0000', fontStyle: 0 },
+    ]]
+    const splitTokens = [[
+      { content: 'a', color: '#ff0000', fontStyle: 0 },
+      { content: 'b', color: '#ff0000', fontStyle: 0 },
+    ]]
+
+    updateCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+      tokenLines: unsplitTokens,
+    })
+
+    expect(container.querySelectorAll('code .line > span')).toHaveLength(1)
+
+    expect(updateCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+      tokenLines: splitTokens,
+    })).toBe('incremental')
+    expect(container.querySelectorAll('code .line > span')).toHaveLength(2)
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+      tokenLines: unsplitTokens,
+    })
+
+    expect(result).toBe('incremental')
+    expect(container.querySelectorAll('code .line > span')).toHaveLength(1)
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+  })
+
   it('forces a full render when incremental tokenStyleMode changes', () => {
     updateCodeTokensIncremental(container, coloredHl as any, 'const', {
       lang: 'ts',
