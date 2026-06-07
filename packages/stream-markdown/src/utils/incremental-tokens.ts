@@ -16,7 +16,9 @@ export type UpdateResult = 'incremental' | 'full' | 'noop'
 
 const RENDER_SIGNATURES = new WeakMap<HTMLElement, string>()
 const LINE_SIGNATURES = new WeakMap<HTMLElement, string>()
+const LINE_DOM_HTML = new WeakMap<HTMLElement, string>()
 const LAST_CODE = new WeakMap<HTMLElement, string>()
+const CODE_DOM_HTML = new WeakMap<HTMLElement, string>()
 
 function countLines(code: string): number {
   let count = 1
@@ -99,11 +101,41 @@ function getThemeBackgroundColor(highlighter: Highlighter, theme: string): strin
 function clearContainerRenderState(container: HTMLElement): void {
   LAST_CODE.delete(container)
   RENDER_SIGNATURES.delete(container)
+  CODE_DOM_HTML.delete(container)
 }
 
 function setContainerRenderState(container: HTMLElement, code: string, signature: string): void {
   LAST_CODE.set(container, code)
   RENDER_SIGNATURES.set(container, signature)
+
+  const codeEl = container.querySelector('code') as HTMLElement | null
+  if (codeEl)
+    CODE_DOM_HTML.set(container, codeEl.innerHTML)
+  else
+    CODE_DOM_HTML.delete(container)
+}
+
+function rememberLineSignature(line: HTMLElement, signature: string): void {
+  LINE_SIGNATURES.set(line, signature)
+  LINE_DOM_HTML.set(line, line.innerHTML)
+}
+
+function getTrustedLineSignature(line: HTMLElement): string | undefined {
+  const signature = LINE_SIGNATURES.get(line)
+  if (!signature)
+    return undefined
+
+  if (LINE_DOM_HTML.get(line) !== line.innerHTML) {
+    LINE_SIGNATURES.delete(line)
+    LINE_DOM_HTML.delete(line)
+    return undefined
+  }
+
+  return signature
+}
+
+function hasUnchangedRenderedCodeDom(container: HTMLElement, codeEl: Element): boolean {
+  return CODE_DOM_HTML.get(container) === (codeEl as HTMLElement).innerHTML
 }
 
 function getIncrementalStyleRoot(opts: { styleRoot?: Node | null }, container: HTMLElement): Node | null {
@@ -296,8 +328,6 @@ function createLineElement(
 ): HTMLSpanElement {
   const span = ownerDocument.createElement('span')
   span.className = lineClass
-  if (signature)
-    LINE_SIGNATURES.set(span, signature)
 
   if (showLineNumbers && typeof lineNumber === 'number') {
     const ln = ownerDocument.createElement('span')
@@ -337,6 +367,9 @@ function createLineElement(
     tspan.textContent = content
     span.appendChild(tspan)
   }
+
+  if (signature)
+    rememberLineSignature(span, signature)
 
   return span
 }
@@ -499,7 +532,7 @@ export function updateCodeTokensIncremental(
       while (newLineEl.firstChild)
         oldLines[lastIdx].appendChild(newLineEl.firstChild)
       if (sig)
-        LINE_SIGNATURES.set(oldLines[lastIdx], sig)
+        rememberLineSignature(oldLines[lastIdx], sig)
 
       if (newLen > oldLen) {
         const frag = ownerDocument.createDocumentFragment()
@@ -538,7 +571,7 @@ export function updateCodeTokensIncremental(
     const oldLine = oldLines[idx]
     if (compareMode === 'signature') {
       const sig = lineSignature(tokenLines[idx], showLineNumbers, lineNumber, tokenStyleMode)
-      const oldSig = LINE_SIGNATURES.get(oldLine)
+      const oldSig = getTrustedLineSignature(oldLine)
       if (oldSig) {
         if (oldSig !== sig) {
           divergeAt = idx
@@ -551,7 +584,7 @@ export function updateCodeTokensIncremental(
           divergeAt = idx
           break
         }
-        LINE_SIGNATURES.set(oldLine, sig)
+        rememberLineSignature(oldLine, sig)
       }
     }
     else {
@@ -620,7 +653,7 @@ export function updateCodeTokensIncremental(
     while (newLineEl.firstChild)
       oldLines[divergeAt].appendChild(newLineEl.firstChild)
     if (sig)
-      LINE_SIGNATURES.set(oldLines[divergeAt], sig)
+      rememberLineSignature(oldLines[divergeAt], sig)
 
     if (newLen > oldLen) {
       const frag = ownerDocument.createDocumentFragment()
@@ -709,6 +742,7 @@ export function createTokenIncrementalUpdater(
         if (
           codeEl
           && RENDER_SIGNATURES.get(target) === signature
+          && hasUnchangedRenderedCodeDom(target, codeEl)
           && (codeEl.textContent ?? '').replace(/\r/g, '') === code.replace(/\r/g, '')
         ) {
           ensureIncrementalTokenStyleSheet(styleRoot, tokenStyleMode)
@@ -1107,6 +1141,8 @@ export function createScheduledTokenIncrementalUpdater(
     })
 
     if (RENDER_SIGNATURES.get(target) !== signature)
+      return false
+    if (!hasUnchangedRenderedCodeDom(target, codeEl))
       return false
     if ((codeEl.textContent ?? '').replace(/\r/g, '') !== code.replace(/\r/g, ''))
       return false

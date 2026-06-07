@@ -223,6 +223,18 @@ describe('updateCodeTokensIncremental', () => {
     expect(style).toContain('font-weight: 600;')
   })
 
+  it('emits token class selectors with enough specificity to beat common host CSS', () => {
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const token = container.querySelector('code .line span') as HTMLElement
+    const style = document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent ?? ''
+
+    expect(style).toContain(`.${token.className}.${token.className}.${token.className}{`)
+  })
+
   it('allows inline token styles in incremental rendering when requested', () => {
     updateCodeTokensIncremental(container, coloredHl as any, 'const', {
       lang: 'ts',
@@ -749,6 +761,27 @@ describe('updateCodeTokensIncremental', () => {
 
     expect(updater.update('inner')).toBe('noop')
     expect(tokenizationCount).toBe(2)
+
+    updater.dispose()
+  })
+
+  it('does not skip same-code updater calls after signed token DOM is externally mutated', () => {
+    const updater = createTokenIncrementalUpdater(container, coloredHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    updater.update('con')
+    updater.update('const')
+
+    const token = container.querySelector('code .line span') as HTMLElement
+    expect(token.className).toMatch(/^smd-token-/)
+
+    token.removeAttribute('class')
+
+    expect(updater.update('const')).toBe('incremental')
+    expect((container.querySelector('code .line span') as HTMLElement).className)
+      .toMatch(/^smd-token-/)
 
     updater.dispose()
   })

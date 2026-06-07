@@ -41,6 +41,7 @@ const TOKEN_CLASS_CACHE = new Map<string, string>()
 const TOKEN_STYLE_CACHE = new Map<string, string>()
 const TOKEN_STYLE_BY_CLASS = new Map<string, string>()
 const TOKEN_STYLE_RULES: string[] = []
+const TOKEN_STYLE_SELECTOR_SPECIFICITY = 3
 let tokenStyleGeneration = 0
 let tokenStyleSheetText = ''
 let tokenStyleSheetTextGeneration = -1
@@ -175,6 +176,10 @@ function hashTokenStyle(style: string): string {
   return `${(h1 >>> 0).toString(36)}-${(h2 >>> 0).toString(36)}`
 }
 
+function tokenClassSelector(className: string): string {
+  return Array.from({ length: TOKEN_STYLE_SELECTOR_SPECIFICITY }, () => `.${className}`).join('')
+}
+
 function getTokenClassNameForStyle(style: string): string {
   if (!style)
     return ''
@@ -192,7 +197,7 @@ function getTokenClassNameForStyle(style: string): string {
     if (!existingStyle) {
       TOKEN_CLASS_CACHE.set(style, className)
       TOKEN_STYLE_BY_CLASS.set(className, style)
-      TOKEN_STYLE_RULES.push(`.${className}{${style}}`)
+      TOKEN_STYLE_RULES.push(`${tokenClassSelector(className)}{${style}}`)
       tokenStyleGeneration++
       return className
     }
