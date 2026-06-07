@@ -16,7 +16,7 @@ let paused = false
 let TIME_BUDGET = 8 // ms
 
 export function setTimeBudget(ms: number) {
-  if (typeof ms === 'number' && ms >= 0)
+  if (typeof ms === 'number' && Number.isFinite(ms) && ms >= 0)
     TIME_BUDGET = ms
 }
 

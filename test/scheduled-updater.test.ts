@@ -446,6 +446,32 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     expect(container.querySelector('code')?.textContent).toBe('final')
   })
 
+  it('treats non-finite throttle values as unthrottled', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    let updater: ReturnType<typeof createScheduledTokenIncrementalUpdater> | null = null
+
+    try {
+      updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: Infinity,
+      })
+
+      updater.update('immediate')
+
+      expect(setTimeoutSpy).not.toHaveBeenCalledWith(expect.any(Function), Infinity)
+
+      await new Promise(r => setTimeout(r, 0))
+      expect(container.querySelector('code')?.textContent).toBe('immediate')
+    }
+    finally {
+      updater?.dispose()
+      setTimeoutSpy.mockRestore()
+    }
+  })
+
   it('cancels a queued stale update when a newer throttled update arrives before idle work runs', async () => {
     const idleCallbacks: IdleRequestCallback[] = []
     const ricImpl = (cb: IdleRequestCallback) => {

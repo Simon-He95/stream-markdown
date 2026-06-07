@@ -48,6 +48,7 @@ vi.mock('shiki-stream', () => ({
 }))
 
 vi.mock('../packages/stream-markdown/src/utils/highlight.js', () => ({
+  defaultLanguages: ['ts', 'tsx'],
   registerHighlight: highlightMock.registerHighlight,
 }))
 
@@ -82,6 +83,36 @@ describe('createShikiStreamCachedRenderer', () => {
     expect(highlightMock.registerHighlight).toHaveBeenCalledWith({
       langs: undefined,
       themes: ['vitesse-light'],
+    })
+
+    renderer.dispose()
+  })
+
+  it('registers dynamically updated languages', async () => {
+    shikiStreamMock.enqueueResults.push(
+      { recall: 0, stable: [{ content: 'const first = 1' }], unstable: [] },
+      { recall: 0, stable: [{ content: 'const second = 2' }], unstable: [] },
+    )
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      langs: ['ts'],
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+    })
+
+    await renderer.updateCode('const first = 1', 'ts')
+    highlightMock.registerHighlight.mockClear()
+
+    await renderer.updateCode('const second = 2', 'zig')
+
+    expect(highlightMock.registerHighlight).toHaveBeenCalledWith({
+      langs: ['ts', 'zig'],
+      themes: undefined,
     })
 
     renderer.dispose()

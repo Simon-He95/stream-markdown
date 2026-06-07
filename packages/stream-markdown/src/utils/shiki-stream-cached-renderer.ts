@@ -2,7 +2,7 @@ import type { TokenIncrementalOptions, TokenIncrementalUpdater } from './increme
 import type { ThemedToken } from './shiki-render.js'
 import type { ShikiStreamRendererOptions } from './shiki-stream-renderer.js'
 import { ShikiStreamTokenizer } from 'shiki-stream'
-import { registerHighlight } from './highlight.js'
+import { defaultLanguages, registerHighlight } from './highlight.js'
 import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
 import { observeElement } from './shared-intersection-observer.js'
@@ -113,10 +113,20 @@ export function createShikiStreamCachedRenderer(
   let isVisible = false
   let opChain: Promise<unknown> = Promise.resolve()
 
-  const ensureHighlighter = async () => {
+  const getHighlightLangs = (lang = currentLang): string[] | undefined => {
+    const optionLangs = options.langs?.length ? options.langs : undefined
+    const baseLangs = optionLangs ?? defaultLanguages
+
+    if (!lang || lang === 'plaintext' || baseLangs.includes(lang))
+      return optionLangs
+
+    return [...baseLangs, lang]
+  }
+
+  const ensureHighlighter = async (lang = currentLang) => {
     if (disposed)
       return
-    const nextHighlighter = await registerHighlight({ langs: options.langs, themes: options.themes as any })
+    const nextHighlighter = await registerHighlight({ langs: getHighlightLangs(lang), themes: options.themes as any })
     if (disposed)
       return
     highlighter = nextHighlighter
@@ -138,24 +148,24 @@ export function createShikiStreamCachedRenderer(
     }
   }
 
-  const ensureThemeLoaded = async (theme: string) => {
+  const ensureThemeLoaded = async (theme: string, lang = currentLang) => {
     if (!theme || disposed)
       return
     if (!highlighter)
-      await ensureHighlighter()
+      await ensureHighlighter(lang)
     if (disposed || !highlighter)
       return
     if (hasLoadedTheme(theme))
       return
 
-    const nextHighlighter = await registerHighlight({ langs: options.langs, themes: [theme as any] })
+    const nextHighlighter = await registerHighlight({ langs: getHighlightLangs(lang), themes: [theme as any] })
     if (!disposed)
       highlighter = nextHighlighter
   }
 
   const ensureTokenizer = async () => {
     if (!highlighter)
-      await ensureHighlighter()
+      await ensureHighlighter(currentLang)
     if (disposed || !highlighter)
       return
     if (!tokenizer) {
@@ -205,7 +215,7 @@ export function createShikiStreamCachedRenderer(
     })
   }
 
-  if (typeof options.timeBudget === 'number' && options.timeBudget >= 0)
+  if (typeof options.timeBudget === 'number' && Number.isFinite(options.timeBudget) && options.timeBudget >= 0)
     setTimeBudget(options.timeBudget)
 
   const getUpdaterOptions = (): TokenIncrementalOptions => ({
@@ -300,8 +310,8 @@ export function createShikiStreamCachedRenderer(
 
     if (!highlighter || langChanged) {
       currentLang = nextLang
-      await ensureHighlighter()
-      await ensureThemeLoaded(currentTheme)
+      await ensureHighlighter(nextLang)
+      await ensureThemeLoaded(currentTheme, nextLang)
       if (disposed)
         return
       tokenizer = null
@@ -346,7 +356,7 @@ export function createShikiStreamCachedRenderer(
     if (!theme || theme === currentTheme)
       return
     cancelPendingRender()
-    await ensureThemeLoaded(theme)
+    await ensureThemeLoaded(theme, currentLang)
     if (disposed)
       return
     currentTheme = theme

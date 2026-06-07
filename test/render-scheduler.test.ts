@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearAll, drain, getQueueLength, pause, resume, scheduleRenderJob } from '../packages/stream-markdown/src/utils/render-scheduler.js'
+import { clearAll, drain, getQueueLength, getTimeBudget, pause, resume, scheduleRenderJob, setTimeBudget } from '../packages/stream-markdown/src/utils/render-scheduler.js'
 
 describe('render scheduler', () => {
   beforeEach(() => {
@@ -19,6 +19,20 @@ describe('render scheduler', () => {
     drain()
 
     expect(order).toEqual(['high-1', 'high-2', 'normal-1', 'normal-2'])
+  })
+
+  it('ignores non-finite time budgets', () => {
+    const original = getTimeBudget()
+
+    try {
+      setTimeBudget(4)
+      setTimeBudget(Infinity)
+
+      expect(getTimeBudget()).toBe(4)
+    }
+    finally {
+      setTimeBudget(original)
+    }
   })
 
   afterEach(() => {

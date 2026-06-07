@@ -57,6 +57,12 @@ function estimateNodeCost(code: string): number {
   return Math.min(8000, lineCount + estTokenSpans)
 }
 
+function normalizeDelayMs(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
+    return 0
+  return value
+}
+
 function escapeHtml(str: string): string {
   return str.replace(/\r/g, '')
     .replace(/&/g, '&amp;')
@@ -1273,7 +1279,7 @@ export function createScheduledTokenIncrementalUpdater(
   }
 
   const scheduleFlush = () => {
-    const throttleMs = opts.throttleMs ?? 0
+    const throttleMs = normalizeDelayMs(opts.throttleMs)
     if (throttleMs <= 0) {
       flush()
       return
