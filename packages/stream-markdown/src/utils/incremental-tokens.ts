@@ -144,6 +144,32 @@ function getCodeLineElements(codeEl: HTMLElement, lineClass: string): HTMLElemen
   return lines.filter(el => classNames.every(className => el.classList.contains(className)))
 }
 
+function previousCodeLines(code: string): string[] {
+  return code.replace(/\r/g, '').split('\n')
+}
+
+function hasExpectedCodeLineStructure(
+  codeEl: HTMLElement,
+  oldLines: HTMLElement[],
+  prevCode: string,
+): boolean {
+  const expectedLines = previousCodeLines(prevCode)
+
+  // External DOM mutations can preserve textContent while replacing/removing
+  // wrappers; incremental updates would otherwise leave stale direct children.
+  if (oldLines.length !== codeEl.children.length)
+    return false
+  if (oldLines.length !== expectedLines.length)
+    return false
+
+  for (let i = 0; i < oldLines.length; i++) {
+    if ((oldLines[i].textContent ?? '').replace(/\r/g, '') !== expectedLines[i])
+      return false
+  }
+
+  return true
+}
+
 function lineInnerHtml(
   tokens: ThemedToken[],
   showLineNumbers: boolean,
@@ -434,6 +460,9 @@ export function updateCodeTokensIncremental(
     return renderFull()
 
   const oldLines = getCodeLineElements(codeEl, lineClass)
+  if (!hasExpectedCodeLineStructure(codeEl, oldLines, prevCode))
+    return renderFull()
+
   const tokenLines = providedTokenLines
     ? normalizeTokenLinesForCode(providedTokenLines, code, true)
     : normalizeTokenLinesForCode(getTokenLines(highlighter, code, lang, theme, {

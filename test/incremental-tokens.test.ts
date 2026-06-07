@@ -131,6 +131,27 @@ describe('updateCodeTokensIncremental', () => {
     expect(container.querySelectorAll('code .line')).toHaveLength(2)
   })
 
+  it('falls back to full render when tracked line wrappers are replaced but text stays unchanged', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const codeEl = container.querySelector('code')!
+    codeEl.innerHTML = '<span>a</span>\n<span>b</span>'
+    expect(codeEl.textContent).toBe('a\nb')
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code')?.textContent).toBe('a\nb')
+    expect(container.querySelectorAll('code > .line')).toHaveLength(2)
+    expect(container.querySelectorAll('code > span:not(.line)')).toHaveLength(0)
+  })
+
   it('unobserves scheduled containers after the task runs', async () => {
     vi.resetModules()
 
