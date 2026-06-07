@@ -23,6 +23,18 @@ const futureDependentHl = {
   },
 }
 
+const themedHl = {
+  codeToThemedTokens(code: string) {
+    return code.split('\n').map(line => [{
+      content: line,
+      color: '#ff0000',
+    }])
+  },
+  getTheme(theme: string) {
+    return { bg: theme === 'dark' ? '#000000' : '#ffffff' }
+  },
+}
+
 describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
   let origRIC: any
   let origIO: any
@@ -118,6 +130,35 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
 
     updater.dispose()
     consoleError.mockRestore()
+  })
+
+  it('does not skip same-code updates when the pre background style was externally changed', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const results: string[] = []
+    const updater = createScheduledTokenIncrementalUpdater(container, themedHl as any, {
+      lang: 'ts',
+      theme: 'dark',
+      onResult: (result: string) => results.push(result),
+    })
+
+    updater.update('same')
+    await new Promise(r => setTimeout(r, 0))
+
+    const pre = container.querySelector('pre') as HTMLElement
+    expect(results).toEqual(['full'])
+    expect(pre.getAttribute('style')).toContain('#000000')
+    pre.setAttribute('style', 'background-color: #123456;')
+
+    results.length = 0
+    updater.update('same')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(results).toEqual(['full'])
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#000000')
+
+    updater.dispose()
   })
 
   it('continues processing after a synchronous requestIdleCallback', async () => {

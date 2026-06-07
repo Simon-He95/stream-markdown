@@ -3,13 +3,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearAll } from '../packages/stream-markdown/src/utils/render-scheduler.js'
 import { createShikiStreamRenderer } from '../packages/stream-markdown/src/utils/shiki-stream-renderer.js'
 
-vi.mock('../packages/stream-markdown/src/utils/highlight.js', () => ({
-  registerHighlight: vi.fn(async () => ({
+const highlightMock = vi.hoisted(() => {
+  const loadedThemes = new Set<string>(['vitesse-dark'])
+  const loadTheme = vi.fn(async (theme: string) => {
+    loadedThemes.add(theme)
+  })
+  const highlighter = {
     codeToThemedTokens(code: string) {
       return code.split('\n').map(line => [{ content: line }])
     },
-    loadTheme: vi.fn(),
-  })),
+    getTheme: vi.fn((theme: string) => {
+      return loadedThemes.has(theme) ? { bg: '#000000' } : undefined
+    }),
+    loadTheme,
+  }
+  const registerHighlight = vi.fn(async (options?: { themes?: any[] }) => {
+    for (const theme of options?.themes ?? []) {
+      if (typeof theme === 'string')
+        loadedThemes.add(theme)
+    }
+    return highlighter
+  })
+
+  return { highlighter, loadedThemes, loadTheme, registerHighlight }
+})
+
+vi.mock('../packages/stream-markdown/src/utils/highlight.js', () => ({
+  registerHighlight: highlightMock.registerHighlight,
 }))
 
 function restoreGlobal(target: any, key: string, value: any) {
@@ -31,6 +51,11 @@ describe('createShikiStreamRenderer', () => {
     clearAll()
     document.body.innerHTML = ''
     document.head.innerHTML = ''
+    highlightMock.loadedThemes.clear()
+    highlightMock.loadedThemes.add('vitesse-dark')
+    highlightMock.loadTheme.mockClear()
+    highlightMock.highlighter.getTheme.mockClear()
+    highlightMock.registerHighlight.mockClear()
 
     origGlobalRaf = (globalThis as any).requestAnimationFrame
     origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame
@@ -49,6 +74,26 @@ describe('createShikiStreamRenderer', () => {
     restoreGlobal(window as any, 'cancelAnimationFrame', origWindowCancelRaf)
     restoreGlobal(globalThis as any, 'requestIdleCallback', origGlobalRic)
     restoreGlobal(window as any, 'requestIdleCallback', origWindowRic)
+  })
+
+  it('loads changed themes through registerHighlight', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    await renderer.setTheme('vitesse-light')
+
+    expect(highlightMock.loadTheme).not.toHaveBeenCalled()
+    expect(highlightMock.registerHighlight).toHaveBeenCalledWith({
+      langs: undefined,
+      themes: ['vitesse-light'],
+    })
+
+    renderer.dispose()
   })
 
   it('cancels stale idle token updates when newer code arrives', async () => {

@@ -54,6 +54,7 @@ const loadedBundledThemes = new Set<string>()
 const loadedNamedThemeObjects = new Map<string, object>()
 let loadedAnonymousThemeObjects = new WeakSet<object>()
 let applyPromise: Promise<void> = Promise.resolve()
+let highlighterGeneration = 0
 
 function getThemeId(theme: HighlightTheme): string | undefined {
   if (typeof theme === 'string')
@@ -265,8 +266,10 @@ export async function registerHighlight(options: {
   // If a creation is already in progress, wait for it. Otherwise, create a
   // single promise immediately (wrapping the dynamic import + creation) so
   // concurrent callers don't each import and create their own highlighter.
+  const requestGeneration = highlighterGeneration
   if (!highlighterPromise) {
-    highlighterPromise = (async () => {
+    const creationGeneration = highlighterGeneration
+    const promise = (async () => {
       const { createHighlighter } = await import('shiki')
       const initialThemes = pendingThemes.length > 0 ? pendingThemes.slice() : defaultThemes
       const initialLangs = pendingLangs.size > 0 ? Array.from(pendingLangs) : defaultLanguages
@@ -274,6 +277,9 @@ export async function registerHighlight(options: {
         themes: initialThemes,
         langs: initialLangs,
       })
+      if (creationGeneration !== highlighterGeneration)
+        return h
+
       markInitialLoaded(initialLangs, initialThemes)
       for (const lang of initialLangs)
         pendingLangs.delete(lang)
@@ -281,19 +287,26 @@ export async function registerHighlight(options: {
       highlighter = h
       await applyPending(h)
       return h
-    })().finally(() => {
+    })()
+    const trackedPromise = promise.finally(() => {
       // Clear the promise reference when done so future calls can create a
       // new highlighter if `disposeHighlighter` was used.
-      highlighterPromise = null
+      if (highlighterPromise === trackedPromise)
+        highlighterPromise = null
     })
+    highlighterPromise = trackedPromise
   }
 
   const h = await highlighterPromise
+  if (requestGeneration !== highlighterGeneration)
+    return h
+
   await applyPending(h)
   return h
 }
 
 export function disposeHighlighter() {
+  highlighterGeneration++
   if (highlighter) {
     clearTokenCache(highlighter)
     clearHtmlCache(highlighter)

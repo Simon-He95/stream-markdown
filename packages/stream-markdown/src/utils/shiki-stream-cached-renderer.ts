@@ -122,6 +122,22 @@ export function createShikiStreamCachedRenderer(
     highlighter = nextHighlighter
   }
 
+  const hasLoadedTheme = (theme: string) => {
+    if (!highlighter)
+      return false
+
+    const anyHl = highlighter as any
+    if (typeof anyHl.getTheme !== 'function')
+      return false
+
+    try {
+      return !!anyHl.getTheme(theme)
+    }
+    catch {
+      return false
+    }
+  }
+
   const ensureThemeLoaded = async (theme: string) => {
     if (!theme || disposed)
       return
@@ -129,9 +145,12 @@ export function createShikiStreamCachedRenderer(
       await ensureHighlighter()
     if (disposed || !highlighter)
       return
-    const anyHl = highlighter as any
-    if (typeof anyHl.loadTheme === 'function')
-      await anyHl.loadTheme(theme)
+    if (hasLoadedTheme(theme))
+      return
+
+    const nextHighlighter = await registerHighlight({ langs: options.langs, themes: [theme as any] })
+    if (!disposed)
+      highlighter = nextHighlighter
   }
 
   const ensureTokenizer = async () => {

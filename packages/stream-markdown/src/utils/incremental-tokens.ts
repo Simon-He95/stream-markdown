@@ -102,12 +102,17 @@ function getClassAttribute(el: Element): string {
   return el.getAttribute('class') ?? ''
 }
 
+function expectedPreStyle(backgroundColor: string): string {
+  return backgroundColor ? `background-color: ${backgroundColor};` : ''
+}
+
 function hasExpectedRenderedShell(
   container: HTMLElement,
   codeEl: HTMLElement,
   options: {
     preClass: string
     codeClass: string
+    backgroundColor: string
   },
 ): boolean {
   const preEl = codeEl.parentElement
@@ -119,6 +124,7 @@ function hasExpectedRenderedShell(
     && container.firstChild === preEl
     && getClassAttribute(preEl) === options.preClass
     && getClassAttribute(codeEl) === options.codeClass
+    && (preEl.getAttribute('style') ?? '') === expectedPreStyle(options.backgroundColor)
 }
 
 function clearContainerRenderState(container: HTMLElement): void {
@@ -503,7 +509,7 @@ export function updateCodeTokensIncremental(
     ensureIncrementalTokenStyleSheet(styleRoot, tokenStyleMode)
   if (!codeEl)
     return renderFull()
-  if (!hasExpectedRenderedShell(container, codeEl, { preClass, codeClass }))
+  if (!hasExpectedRenderedShell(container, codeEl, { preClass, codeClass, backgroundColor }))
     return renderFull()
 
   const previousSignature = RENDER_SIGNATURES.get(container)
@@ -771,7 +777,7 @@ export function createTokenIncrementalUpdater(
         })
         if (
           codeEl
-          && hasExpectedRenderedShell(target, codeEl, { preClass, codeClass })
+          && hasExpectedRenderedShell(target, codeEl, { preClass, codeClass, backgroundColor: getThemeBackgroundColor(highlighter, opts.theme) })
           && RENDER_SIGNATURES.get(target) === signature
           && hasUnchangedRenderedCodeDom(target, codeEl)
           && (codeEl.textContent ?? '').replace(/\r/g, '') === code.replace(/\r/g, '')
@@ -1171,7 +1177,7 @@ export function createScheduledTokenIncrementalUpdater(
 
     const preClass = opts.preClass ?? 'shiki'
     const codeClass = opts.codeClass ?? ''
-    if (!hasExpectedRenderedShell(target, codeEl, { preClass, codeClass }))
+    if (!hasExpectedRenderedShell(target, codeEl, { preClass, codeClass, backgroundColor: getThemeBackgroundColor(highlighter, opts.theme) }))
       return false
 
     const styleRoot = getIncrementalStyleRoot(opts, target)

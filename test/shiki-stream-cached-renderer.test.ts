@@ -8,6 +8,31 @@ const shikiStreamMock = vi.hoisted(() => ({
   chunks: [] as string[],
 }))
 
+const highlightMock = vi.hoisted(() => {
+  const loadedThemes = new Set<string>(['vitesse-dark'])
+  const loadTheme = vi.fn(async (theme: string) => {
+    loadedThemes.add(theme)
+  })
+  const highlighter = {
+    codeToThemedTokens(code: string) {
+      return code.split('\n').map(line => [{ content: line }])
+    },
+    getTheme: vi.fn((theme: string) => {
+      return loadedThemes.has(theme) ? { bg: '#000000' } : undefined
+    }),
+    loadTheme,
+  }
+  const registerHighlight = vi.fn(async (options?: { themes?: any[] }) => {
+    for (const theme of options?.themes ?? []) {
+      if (typeof theme === 'string')
+        loadedThemes.add(theme)
+    }
+    return highlighter
+  })
+
+  return { highlighter, loadedThemes, loadTheme, registerHighlight }
+})
+
 vi.mock('shiki-stream', () => ({
   ShikiStreamTokenizer: class {
     enqueue = vi.fn(async (chunk: string) => {
@@ -23,23 +48,43 @@ vi.mock('shiki-stream', () => ({
 }))
 
 vi.mock('../packages/stream-markdown/src/utils/highlight.js', () => ({
-  registerHighlight: vi.fn(async () => ({
-    codeToThemedTokens(code: string) {
-      return code.split('\n').map(line => [{ content: line }])
-    },
-    loadTheme: vi.fn(),
-  })),
+  registerHighlight: highlightMock.registerHighlight,
 }))
 
 describe('createShikiStreamCachedRenderer', () => {
   beforeEach(() => {
     shikiStreamMock.enqueueResults = []
     shikiStreamMock.chunks = []
+    highlightMock.loadedThemes.clear()
+    highlightMock.loadedThemes.add('vitesse-dark')
+    highlightMock.loadTheme.mockClear()
+    highlightMock.highlighter.getTheme.mockClear()
+    highlightMock.registerHighlight.mockClear()
     document.body.innerHTML = ''
     document.head.innerHTML = ''
     ;(window as any).requestIdleCallback = (cb: IdleRequestCallback) => {
       return window.setTimeout(() => cb({ timeRemaining: () => 999, didTimeout: true }), 0)
     }
+  })
+
+  it('loads changed themes through registerHighlight', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    await renderer.setTheme('vitesse-light')
+
+    expect(highlightMock.loadTheme).not.toHaveBeenCalled()
+    expect(highlightMock.registerHighlight).toHaveBeenCalledWith({
+      langs: undefined,
+      themes: ['vitesse-light'],
+    })
+
+    renderer.dispose()
   })
 
   it('handles empty tokenizer chunks after theme changes', async () => {

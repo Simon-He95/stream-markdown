@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { createTokenIncrementalUpdater, renderCodeWithTokens, updateCodeTokensIncremental } from 'stream-markdown'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createTokenIncrementalUpdater as createSourceTokenIncrementalUpdater } from '../packages/stream-markdown/src/utils/incremental-tokens.js'
+import {
+  createTokenIncrementalUpdater as createSourceTokenIncrementalUpdater,
+  updateCodeTokensIncremental as updateSourceCodeTokensIncremental,
+} from '../packages/stream-markdown/src/utils/incremental-tokens.js'
 import { normalizeCssColor } from '../packages/stream-markdown/src/utils/token-style.js'
 import { streamContent as tsMarkdown } from '../src/pages/markdown.js'
 import { markdownContent } from '../src/samples/content-markdown.js'
@@ -614,6 +617,27 @@ describe('updateCodeTokensIncremental', () => {
     updater.dispose()
   })
 
+  it('repairs externally mutated pre background style on updater same-code calls', () => {
+    const updater = createSourceTokenIncrementalUpdater(container, themedHl as any, {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    updater.update('same')
+
+    const pre = container.querySelector('pre') as HTMLElement
+    expect(pre.getAttribute('style')).toContain('#000000')
+    pre.setAttribute('style', 'background-color: #123456;')
+
+    const result = updater.update('same')
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#000000')
+    expect(container.querySelector('code')?.textContent).toBe('same')
+
+    updater.dispose()
+  })
+
   it('supports an empty lineClass without duplicating stale lines', () => {
     updateCodeTokensIncremental(container, hl as any, 'a', {
       lang: 'ts',
@@ -910,6 +934,25 @@ describe('updateCodeTokensIncremental', () => {
 
     expect(result).toBe('full')
     expect(container.querySelector('pre')?.getAttribute('style')).toContain('#ffffff')
+  })
+
+  it('forces a full render when the pre background style was externally changed', () => {
+    updateSourceCodeTokensIncremental(container, themedHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    const pre = container.querySelector('pre') as HTMLElement
+    expect(pre.getAttribute('style')).toContain('#000000')
+    pre.setAttribute('style', 'background-color: #123456;')
+
+    const result = updateSourceCodeTokensIncremental(container, themedHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#000000')
   })
 
   it('does not skip identical code when the same theme name resolves to a different background', () => {

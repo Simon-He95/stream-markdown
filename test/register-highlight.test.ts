@@ -176,4 +176,47 @@ describe('registerHighlight', () => {
       vi.resetModules()
     }
   })
+
+  it('does not repopulate the disposed singleton from an in-flight highlighter creation', async () => {
+    vi.resetModules()
+
+    let resolveCreate!: (value: any) => void
+    const created = new Promise<any>((resolve) => {
+      resolveCreate = resolve
+    })
+    const firstHighlighter = { id: 'first' }
+    const secondHighlighter = { id: 'second' }
+    const createHighlighter = vi.fn()
+      .mockImplementationOnce(() => created)
+      .mockImplementationOnce(async () => secondHighlighter)
+
+    vi.doMock('shiki', () => ({
+      createHighlighter,
+    }))
+
+    try {
+      const { disposeHighlighter, registerHighlight } = await import('../packages/stream-markdown/src/utils/highlight.js')
+
+      const first = registerHighlight({ langs: ['ts'], themes: ['vitesse-dark'] as any })
+      for (let i = 0; createHighlighter.mock.calls.length === 0 && i < 10; i++)
+        await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(createHighlighter).toHaveBeenCalledTimes(1)
+
+      disposeHighlighter()
+      resolveCreate(firstHighlighter)
+
+      await expect(first).resolves.toBe(firstHighlighter)
+      await expect(registerHighlight({ langs: ['ts'], themes: ['vitesse-light'] as any }))
+        .resolves
+        .toBe(secondHighlighter)
+      expect(createHighlighter).toHaveBeenCalledTimes(2)
+
+      disposeHighlighter()
+    }
+    finally {
+      vi.doUnmock('shiki')
+      vi.resetModules()
+    }
+  })
 })
