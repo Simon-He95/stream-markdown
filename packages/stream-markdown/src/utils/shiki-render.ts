@@ -67,12 +67,19 @@ function escapeAttr(str: string): string {
     .replace(/>/g, '&gt;')
 }
 
+function normalizeStartingLineNumber(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value))
+    return 1
+  return Math.trunc(value)
+}
+
 export function renderCodeWithTokens(
   highlighter: Highlighter,
   code: string,
   opts: RenderOptions,
 ): string {
-  const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber = 1 } = opts
+  const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber: rawStartingLineNumber = 1 } = opts
+  const startingLineNumber = normalizeStartingLineNumber(rawStartingLineNumber)
   const hasConcreteStyleRoot = opts.styleRoot !== undefined && opts.styleRoot !== null
   const requestedTokenStyleMode: TokenStyleMode = opts.tokenStyleMode ?? (hasConcreteStyleRoot ? 'class' : 'inline')
   const tokenStyleMode: TokenStyleMode = requestedTokenStyleMode === 'class' && canUseTokenStyleClasses(opts.styleRoot)

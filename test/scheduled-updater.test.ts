@@ -505,6 +505,42 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     updater.dispose()
   })
 
+  it('skips same-code scheduled updates after the first render', async () => {
+    let tokenizationCount = 0
+    const countedHl = {
+      codeToThemedTokens(code: string) {
+        tokenizationCount++
+        return code.split('\n').map(line => [{ content: line }])
+      },
+    }
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const results: string[] = []
+    const updater = createScheduledTokenIncrementalUpdater(container, countedHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      throttleMs: 0,
+      tokenCache: false,
+      onResult: result => results.push(result),
+    })
+
+    updater.update('same')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(results).toEqual(['full'])
+    expect(tokenizationCount).toBe(1)
+
+    updater.update('same')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(results).toEqual(['full', 'noop'])
+    expect(tokenizationCount).toBe(1)
+
+    updater.dispose()
+  })
+
   // Note: starvation regression is covered by integration manual testing due to
   // jsdom/requestIdleCallback variability across environments.
 })

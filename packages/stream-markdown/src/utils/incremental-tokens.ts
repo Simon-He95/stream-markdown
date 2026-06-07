@@ -43,6 +43,12 @@ function normalizeTokenLinesForCode(
   return lines
 }
 
+function normalizeStartingLineNumber(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value))
+    return 1
+  return Math.trunc(value)
+}
+
 function estimateNodeCost(code: string): number {
   const lineCount = countLines(code)
   const estTokenSpans = Math.ceil(code.length / 6)
@@ -362,9 +368,10 @@ export function updateCodeTokensIncremental(
     codeClass = '',
     lineClass = 'line',
     showLineNumbers = false,
-    startingLineNumber = 1,
+    startingLineNumber: rawStartingLineNumber = 1,
     tokenLines: providedTokenLines,
   } = opts
+  const startingLineNumber = normalizeStartingLineNumber(rawStartingLineNumber)
   const compareMode = opts.compareMode ?? 'signature'
   const ownerDocument = container.ownerDocument
   const styleRoot = getIncrementalStyleRoot(opts, container)
@@ -662,7 +669,7 @@ export function createTokenIncrementalUpdater(
           codeClass: opts.codeClass ?? '',
           lineClass: opts.lineClass ?? 'line',
           showLineNumbers: opts.showLineNumbers ?? false,
-          startingLineNumber: opts.startingLineNumber ?? 1,
+          startingLineNumber: normalizeStartingLineNumber(opts.startingLineNumber ?? 1),
         })
         if (
           codeEl
@@ -976,7 +983,7 @@ class TokenUpdateScheduler {
             codeClass: task.opts.codeClass ?? '',
             lineClass: task.opts.lineClass ?? 'line',
             showLineNumbers: task.opts.showLineNumbers ?? false,
-            startingLineNumber: task.opts.startingLineNumber ?? 1,
+            startingLineNumber: normalizeStartingLineNumber(task.opts.startingLineNumber ?? 1),
           }))
           callScheduledOnResult(task.opts.onResult, 'full')
         }
@@ -1037,6 +1044,41 @@ export function createScheduledTokenIncrementalUpdater(
   let pendingTokenLines: ThemedToken[][] | undefined
   let timer: ReturnType<typeof setTimeout> | null = null
   let updateGeneration = 0
+  let lastCode: string | null = null
+  let lastUpdateUsedProvidedTokenLines = false
+
+  const isRenderedCodeUnchanged = (code: string, hasProvidedTokenLines: boolean): boolean => {
+    if (!target || hasProvidedTokenLines || lastUpdateUsedProvidedTokenLines || opts.skipSameCode === false)
+      return false
+    if (lastCode !== code)
+      return false
+
+    const codeEl = target.querySelector('code')
+    if (!codeEl)
+      return false
+
+    const styleRoot = getIncrementalStyleRoot(opts, target)
+    const tokenStyleMode = resolveIncrementalTokenStyleMode(opts, styleRoot)
+    const signature = renderSignature({
+      lang: opts.lang,
+      theme: opts.theme,
+      backgroundColor: getThemeBackgroundColor(highlighter, opts.theme),
+      tokenStyleMode,
+      preClass: opts.preClass ?? 'shiki',
+      codeClass: opts.codeClass ?? '',
+      lineClass: opts.lineClass ?? 'line',
+      showLineNumbers: opts.showLineNumbers ?? false,
+      startingLineNumber: normalizeStartingLineNumber(opts.startingLineNumber ?? 1),
+    })
+
+    if (RENDER_SIGNATURES.get(target) !== signature)
+      return false
+    if ((codeEl.textContent ?? '').replace(/\r/g, '') !== code.replace(/\r/g, ''))
+      return false
+
+    ensureIncrementalTokenStyleSheet(styleRoot, tokenStyleMode)
+    return true
+  }
 
   const cancelScheduledTask = () => {
     if (!target || scheduledTaskId == null)
@@ -1065,6 +1107,7 @@ export function createScheduledTokenIncrementalUpdater(
     const code = pendingCode
     const targetEl = target
     const tokenLines = pendingTokenLines
+    const hasProvidedTokenLines = tokenLines !== undefined
     pendingCode = null
     pendingTokenLines = undefined
 
@@ -1080,6 +1123,10 @@ export function createScheduledTokenIncrementalUpdater(
         completedSynchronously = true
         if (updateGeneration === taskGeneration && scheduledTaskId === taskId)
           scheduledTaskId = null
+        if (updateGeneration === taskGeneration) {
+          lastCode = code
+          lastUpdateUsedProvidedTokenLines = hasProvidedTokenLines
+        }
         callScheduledOnResult(userOnResult, result)
       },
     }
@@ -1112,6 +1159,13 @@ export function createScheduledTokenIncrementalUpdater(
       if (!alive || !target)
         return 'noop'
 
+      const hasProvidedTokenLines = tokenLines !== undefined
+      if (isRenderedCodeUnchanged(code, hasProvidedTokenLines)) {
+        cancelPendingWork()
+        callScheduledOnResult(opts.onResult, 'noop')
+        return 'noop'
+      }
+
       updateGeneration++
       cancelScheduledTask()
       pendingCode = code
@@ -1126,12 +1180,16 @@ export function createScheduledTokenIncrementalUpdater(
       cancelPendingWork()
       target.innerHTML = ''
       clearContainerRenderState(target)
+      lastCode = null
+      lastUpdateUsedProvidedTokenLines = false
     },
     cancel: cancelPendingWork,
     dispose: () => {
       alive = false
       cancelPendingWork()
       target = null
+      lastCode = null
+      lastUpdateUsedProvidedTokenLines = false
       // leave container as-is; caller may remove
     },
   }

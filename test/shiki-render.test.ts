@@ -249,4 +249,17 @@ describe('renderCodeWithTokens', () => {
     expect(html).not.toContain('color:transparent')
     expect(html).not.toContain('position:fixed')
   })
+
+  it('normalizes runtime startingLineNumber before writing data-line attributes', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      showLineNumbers: true,
+      startingLineNumber: '1" data-bad="1' as any,
+    })
+
+    expect(html).toContain('data-line="1"')
+    expect(html).toContain('data-line="2"')
+    expect(html).not.toContain('data-bad=')
+  })
 })
