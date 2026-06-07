@@ -180,6 +180,38 @@ describe('createShikiStreamCachedRenderer', () => {
     renderer.dispose()
   })
 
+  it('renders initial empty code and re-renders it on theme changes', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const results: string[] = []
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+      onResult: result => results.push(result),
+    })
+
+    await renderer.updateCode('')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(container.querySelector('pre')).not.toBeNull()
+    expect(container.querySelector('code')?.textContent).toBe('')
+    expect(results).toEqual(['full'])
+
+    results.length = 0
+
+    await renderer.setTheme('vitesse-light')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(container.querySelector('pre')).not.toBeNull()
+    expect(container.querySelector('code')?.textContent).toBe('')
+    expect(results).toEqual(['full'])
+
+    renderer.dispose()
+  })
+
   it('passes render options to the cached scheduled token updater', async () => {
     shikiStreamMock.enqueueResults.push({
       recall: 0,

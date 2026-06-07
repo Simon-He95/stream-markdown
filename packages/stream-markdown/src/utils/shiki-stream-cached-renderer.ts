@@ -295,11 +295,12 @@ export function createShikiStreamCachedRenderer(
     const langChanged = nextLang !== currentLang
     const codeChanged = code !== currentCode
 
-    if (!codeChanged && !langChanged) {
-      if (updater) {
-        cancelPendingRender()
-        scheduleBufferedRender(code)
-      }
+    // Same-code updates are only safe to short-circuit after the updater has
+    // been initialized. A fresh renderer with updateCode('') still needs to
+    // bootstrap the highlighter/updater and render an empty code block.
+    if (!codeChanged && !langChanged && updater) {
+      cancelPendingRender()
+      scheduleBufferedRender(code)
       return
     }
 
@@ -364,8 +365,14 @@ export function createShikiStreamCachedRenderer(
     tokenizer = null
     tokenBuffer = []
     reinitUpdater()
-    if (!currentCode)
+
+    // Empty code is still renderable state. Without this, clearing code and then
+    // switching theme leaves the old rendered shell/background in the DOM.
+    if (!currentCode) {
+      scheduleBufferedRender(currentCode)
       return
+    }
+
     await ensureTokenizer()
     const activeTokenizer = tokenizer as ShikiStreamTokenizer | null
     if (disposed || !activeTokenizer || !updater)
