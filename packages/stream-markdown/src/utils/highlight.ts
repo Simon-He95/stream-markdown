@@ -56,6 +56,10 @@ let loadedAnonymousThemeObjects = new WeakSet<object>()
 let applyPromise: Promise<void> = Promise.resolve()
 let highlighterGeneration = 0
 
+function isCurrentHighlighterInstance(instance: Highlighter, generation: number): boolean {
+  return highlighterGeneration === generation && highlighter === instance
+}
+
 function getThemeId(theme: HighlightTheme): string | undefined {
   if (typeof theme === 'string')
     return theme
@@ -186,8 +190,14 @@ function requeuePendingThemes(themes: HighlightTheme[]) {
   }
 }
 
-async function loadPendingIntoHighlighter(highlighter: Highlighter): Promise<void> {
-  const anyHl = highlighter as any
+async function loadPendingIntoHighlighter(
+  targetHighlighter: Highlighter,
+  generation: number,
+): Promise<void> {
+  if (!isCurrentHighlighterInstance(targetHighlighter, generation))
+    return
+
+  const anyHl = targetHighlighter as any
   const langs = Array.from(pendingLangs).filter(l => !loadedLangs.has(l))
   const themes = pendingThemes.filter(t => !isThemeLoaded(t))
   pendingLangs.clear()
@@ -205,6 +215,9 @@ async function loadPendingIntoHighlighter(highlighter: Highlighter): Promise<voi
           continue
 
         await anyHl.loadLanguage(l)
+        if (!isCurrentHighlighterInstance(targetHighlighter, generation))
+          return
+
         loadedLangs.add(l)
         didMutateHighlighter = true
       }
@@ -216,12 +229,18 @@ async function loadPendingIntoHighlighter(highlighter: Highlighter): Promise<voi
           continue
 
         await anyHl.loadTheme(t)
+        if (!isCurrentHighlighterInstance(targetHighlighter, generation))
+          return
+
         markThemeLoaded(t)
         didMutateHighlighter = true
       }
     }
   }
   catch (error) {
+    if (!isCurrentHighlighterInstance(targetHighlighter, generation))
+      return
+
     for (const l of langs.slice(langIndex)) {
       if (!loadedLangs.has(l))
         pendingLangs.add(l)
@@ -231,18 +250,22 @@ async function loadPendingIntoHighlighter(highlighter: Highlighter): Promise<voi
     throw error
   }
   finally {
-    if (didMutateHighlighter) {
-      clearTokenCache(highlighter)
-      clearHtmlCache(highlighter)
+    if (didMutateHighlighter && isCurrentHighlighterInstance(targetHighlighter, generation)) {
+      clearTokenCache(targetHighlighter)
+      clearHtmlCache(targetHighlighter)
     }
   }
 }
 
-async function applyPending(highlighter: Highlighter) {
+async function applyPending(targetHighlighter: Highlighter, generation = highlighterGeneration) {
   // Serialize loads to avoid overlapping loadTheme/loadLanguage on the same instance.
   const run = applyPromise
     .catch(() => undefined)
-    .then(() => loadPendingIntoHighlighter(highlighter))
+    .then(() => {
+      if (!isCurrentHighlighterInstance(targetHighlighter, generation))
+        return
+      return loadPendingIntoHighlighter(targetHighlighter, generation)
+    })
 
   applyPromise = run.catch(() => undefined)
 
@@ -258,15 +281,17 @@ export async function registerHighlight(options: {
 
   addPendingLangs(langs)
   addPendingThemes(themes)
+  const requestGeneration = highlighterGeneration
 
   if (highlighter) {
-    await applyPending(highlighter)
-    return highlighter
+    const activeHighlighter = highlighter
+    await applyPending(activeHighlighter, requestGeneration)
+    return activeHighlighter
   }
+
   // If a creation is already in progress, wait for it. Otherwise, create a
   // single promise immediately (wrapping the dynamic import + creation) so
   // concurrent callers don't each import and create their own highlighter.
-  const requestGeneration = highlighterGeneration
   if (!highlighterPromise) {
     const creationGeneration = highlighterGeneration
     const promise = (async () => {
@@ -285,7 +310,7 @@ export async function registerHighlight(options: {
         pendingLangs.delete(lang)
       removeInitiallyLoadedPendingThemes(initialThemes)
       highlighter = h
-      await applyPending(h)
+      await applyPending(h, creationGeneration)
       return h
     })()
     const trackedPromise = promise.finally(() => {
@@ -301,7 +326,7 @@ export async function registerHighlight(options: {
   if (requestGeneration !== highlighterGeneration)
     return h
 
-  await applyPending(h)
+  await applyPending(h, requestGeneration)
   return h
 }
 
