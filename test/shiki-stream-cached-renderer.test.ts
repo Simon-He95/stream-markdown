@@ -16,6 +16,9 @@ vi.mock('shiki-stream', () => ({
 
 vi.mock('../packages/stream-markdown/src/utils/highlight.js', () => ({
   registerHighlight: vi.fn(async () => ({
+    codeToThemedTokens(code: string) {
+      return code.split('\n').map(line => [{ content: line }])
+    },
     loadTheme: vi.fn(),
   })),
 }))
@@ -47,7 +50,9 @@ describe('createShikiStreamCachedRenderer', () => {
 
     await renderer.updateCode('const a = 1')
     await expect(renderer.setTheme('vitesse-light')).resolves.toBeUndefined()
+    await new Promise(r => setTimeout(r, 0))
 
+    expect(container.querySelector('code')?.textContent).toBe('const a = 1')
     expect(renderer.getState().tokenCount).toBe(0)
     renderer.dispose()
   })

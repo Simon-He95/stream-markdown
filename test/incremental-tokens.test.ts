@@ -301,20 +301,16 @@ describe('updateCodeTokensIncremental', () => {
     expect(html).not.toContain('class="smd-token-')
   })
 
-  it('uses class token mode when styleRoot is explicitly null', () => {
+  it('falls back to inline token styles when styleRoot is explicitly null', () => {
     const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
       lang: 'ts',
       theme: 'vitesse-dark',
       styleRoot: null,
     })
 
-    expect(html).toContain('class="smd-token-')
-    expect(html).not.toContain('style="color: #ff0000;')
-
-    const styleEl = document.head.querySelector('style[data-stream-markdown-token-styles]')
-    expect(styleEl?.textContent).toContain('color: #ff0000;')
-    expect(styleEl?.textContent).toContain('font-style: italic;')
-    expect(styleEl?.textContent).toContain('font-weight: 600;')
+    expect(html).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')
+    expect(html).not.toContain('class="smd-token-')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
   })
 
   it('rehydrates token style rules when an updater skips identical code', () => {
@@ -418,7 +414,7 @@ describe('updateCodeTokensIncremental', () => {
     expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
   })
 
-  it('allows styleRoot null to override default shadow root injection', () => {
+  it('falls back to inline token styles when styleRoot is null inside shadow DOM', () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
     const shadow = host.attachShadow({ mode: 'open' })
@@ -432,11 +428,11 @@ describe('updateCodeTokensIncremental', () => {
     })
 
     const token = shadowContainer.querySelector('code .line span') as HTMLElement
-    expect(token.className).toMatch(/^smd-token-/)
+    expect(token.className).toBe('')
+    expect(token.getAttribute('style')).toContain('color: #ff0000;')
 
     expect(shadow.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
-    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
-      .toContain(`.${token.className}`)
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
   })
 
   it('appends a new line incrementally', () => {

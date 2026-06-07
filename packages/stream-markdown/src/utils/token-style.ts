@@ -186,7 +186,10 @@ function isShadowRoot(node: Node): node is ShadowRoot {
 }
 
 function resolveStyleRoot(target?: Node | null): TokenStyleRoot | null {
-  if (target) {
+  if (target === null)
+    return null
+
+  if (target !== undefined) {
     if (isDocumentRoot(target) || isShadowRoot(target))
       return target
 

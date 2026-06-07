@@ -73,7 +73,7 @@ export function createShikiStreamCachedRenderer(
   const useRaf = options.scheduleInRaf ?? true
   let scheduled = false
   let cancelScheduledRender: (() => void) | null = null
-  let pendingRender: { code: string, tokenLines: ThemedToken[][] } | null = null
+  let pendingRender: { code: string, tokenLines?: ThemedToken[][] } | null = null
   let disposed = false
   let unregisterObserver: (() => void) | null = null
   let isVisible = false
@@ -168,7 +168,7 @@ export function createShikiStreamCachedRenderer(
     updater = createScheduledTokenIncrementalUpdater(container, highlighter, getUpdaterOptions())
   }
 
-  const scheduleRender = (code: string, tokenLines: ThemedToken[][]) => {
+  const scheduleRender = (code: string, tokenLines?: ThemedToken[][]) => {
     if (disposed)
       return
     pendingRender = { code, tokenLines }
@@ -196,6 +196,19 @@ export function createShikiStreamCachedRenderer(
     }, { priority })
   }
 
+  const hasBufferedCodeContent = () => {
+    return tokenBuffer.some(token => token.content.replace(/\r/g, '').length > 0)
+  }
+
+  const scheduleBufferedRender = (code: string) => {
+    if (code.length > 0 && !hasBufferedCodeContent()) {
+      scheduleRender(code)
+      return
+    }
+
+    scheduleRender(code, tokensToLines(tokenBuffer))
+  }
+
   const updateCode = (code: string, lang?: string) => enqueue(async () => {
     if (disposed)
       return
@@ -204,8 +217,8 @@ export function createShikiStreamCachedRenderer(
     const codeChanged = code !== currentCode
 
     if (!codeChanged && !langChanged) {
-      if (updater && tokenBuffer.length > 0)
-        scheduleRender(code, tokensToLines(tokenBuffer))
+      if (updater)
+        scheduleBufferedRender(code)
       return
     }
 
@@ -253,7 +266,7 @@ export function createShikiStreamCachedRenderer(
       tokenBuffer = []
 
     tokenBuffer.push(...(stable ?? []), ...(unstable ?? []))
-    scheduleRender(code, tokensToLines(tokenBuffer))
+    scheduleBufferedRender(code)
   })
 
   const setTheme = (theme: string) => enqueue(async () => {
@@ -280,7 +293,7 @@ export function createShikiStreamCachedRenderer(
     if (disposed)
       return
     tokenBuffer = [...(stable ?? []), ...(unstable ?? [])]
-    scheduleRender(currentCode, tokensToLines(tokenBuffer))
+    scheduleBufferedRender(currentCode)
   })
 
   const dispose = () => {
