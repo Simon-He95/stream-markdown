@@ -1,8 +1,28 @@
 export type TokenStyleMode = 'inline' | 'class'
 
-const CSS_COLOR_FUNCTION_RE = /^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)\([\w\s.,%/+~#-]+\)$/i
+const SIMPLE_COLOR_RE = /^#[\da-f]{3,8}$/i
+const COLOR_KEYWORD_RE = /^[a-z][a-z0-9-]*$/i
 const CSS_VAR_NAME_RE = /^--[\w-]+$/
-const CSS_VAR_FALLBACK_RE = /^[\w\s#.,%()+/~-]+$/
+const SAFE_CSS_FUNCTION_NAMES = new Set([
+  'rgb',
+  'rgba',
+  'hsl',
+  'hsla',
+  'hwb',
+  'lab',
+  'lch',
+  'oklab',
+  'oklch',
+  'color',
+  'color-mix',
+  'light-dark',
+  'var',
+  'calc',
+  'min',
+  'max',
+  'clamp',
+])
+const CSS_FUNCTION_NAME_RE = /([a-z][\w-]*)\s*\(/gi
 
 function fontStyleToCss(style?: number): string {
   if (style == null || !Number.isFinite(style) || style <= 0)
@@ -36,7 +56,7 @@ function hasUnsafeCssValueChar(value: string): boolean {
     const code = value.charCodeAt(i)
     if (code <= 31 || code === 127)
       return true
-    if (`;"'{}<>`.includes(value[i]))
+    if (`;"'{}<>\\`.includes(value[i]))
       return true
   }
   return false
@@ -45,30 +65,69 @@ function hasUnsafeCssValueChar(value: string): boolean {
 function isSafeCssColorSyntax(value: string): boolean {
   if (!value || hasUnsafeCssValueChar(value))
     return false
-  if (/url\s*\(/i.test(value))
+  if (/url\s*\(|\/\*|@/i.test(value))
     return false
+  if (!hasBalancedParentheses(value))
+    return false
+  return hasOnlyAllowedCssFunctions(value)
+}
+
+function hasBalancedParentheses(value: string): boolean {
+  let depth = 0
+
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i]
+
+    if (ch === '(') {
+      depth++
+      continue
+    }
+
+    if (ch === ')') {
+      depth--
+      if (depth < 0)
+        return false
+    }
+  }
+
+  return depth === 0
+}
+
+function hasOnlyAllowedCssFunctions(value: string): boolean {
+  CSS_FUNCTION_NAME_RE.lastIndex = 0
+
+  let match: RegExpExecArray | null
+  while ((match = CSS_FUNCTION_NAME_RE.exec(value))) {
+    const fn = match[1].toLowerCase()
+    if (!SAFE_CSS_FUNCTION_NAMES.has(fn))
+      return false
+  }
+
   return true
 }
 
-function isSafeCssVar(value: string): boolean {
-  if (!value.startsWith('var(') || !value.endsWith(')'))
+function isSafeTopLevelCssFunction(value: string): boolean {
+  const open = value.indexOf('(')
+  if (open <= 0 || !value.endsWith(')'))
     return false
 
-  const body = value.slice(4, -1)
-  const commaIndex = body.indexOf(',')
-  if (commaIndex === -1)
-    return CSS_VAR_NAME_RE.test(body.trim())
+  const name = value.slice(0, open).trim().toLowerCase()
+  if (!SAFE_CSS_FUNCTION_NAMES.has(name))
+    return false
 
-  const name = body.slice(0, commaIndex).trim()
-  const fallback = body.slice(commaIndex + 1).trim()
-  return CSS_VAR_NAME_RE.test(name) && CSS_VAR_FALLBACK_RE.test(fallback)
+  if (name !== 'var')
+    return true
+
+  const body = value.slice(open + 1, -1).trim()
+  const commaIndex = body.indexOf(',')
+  const varName = (commaIndex === -1 ? body : body.slice(0, commaIndex)).trim()
+  return CSS_VAR_NAME_RE.test(varName)
 }
 
 function isSafeCssColorForSsr(value: string): boolean {
-  return /^#[\da-f]{3,8}$/i.test(value)
-    || /^[a-z][a-z0-9-]*$/i.test(value)
-    || CSS_COLOR_FUNCTION_RE.test(value)
-    || isSafeCssVar(value)
+  return SIMPLE_COLOR_RE.test(value)
+    || COLOR_KEYWORD_RE.test(value)
+    || isSafeTopLevelCssFunction(value)
 }
 
 export function normalizeCssColor(color?: string): string {

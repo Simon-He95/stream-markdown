@@ -163,6 +163,17 @@ export function createShikiStreamCachedRenderer(
     updater?.cancel?.()
   }
 
+  const scheduleCancelableRenderJob = (job: () => void, priority: 'high' | 'normal') => {
+    let ranSynchronously = false
+    const cancel = scheduleRenderJob(() => {
+      ranSynchronously = true
+      cancelScheduledRender = null
+      job()
+    }, { priority })
+
+    cancelScheduledRender = ranSynchronously ? null : cancel
+  }
+
   if (typeof window !== 'undefined' && container) {
     unregisterObserver = observeElement(container, (v) => {
       isVisible = v
@@ -218,15 +229,14 @@ export function createShikiStreamCachedRenderer(
       return
     scheduled = true
     const priority = isVisible ? 'high' : 'normal'
-    cancelScheduledRender = scheduleRenderJob(() => {
-      cancelScheduledRender = null
+    scheduleCancelableRenderJob(() => {
       scheduled = false
       if (disposed || !updater || !pendingRender)
         return
       const render = pendingRender
       pendingRender = null
       updater.update(render.code, render.tokenLines)
-    }, { priority })
+    }, priority)
   }
 
   const hasBufferedCodeContent = () => {

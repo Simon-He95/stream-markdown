@@ -69,6 +69,17 @@ export function createShikiStreamRenderer(
     updater?.cancel?.()
   }
 
+  const scheduleCancelableRenderJob = (job: () => void, priority: 'high' | 'normal') => {
+    let ranSynchronously = false
+    const cancel = scheduleRenderJob(() => {
+      ranSynchronously = true
+      cancelScheduledRender = null
+      job()
+    }, { priority })
+
+    cancelScheduledRender = ranSynchronously ? null : cancel
+  }
+
   const ensureHighlighter = async () => {
     if (disposed)
       return
@@ -161,13 +172,12 @@ export function createShikiStreamRenderer(
     // currently visible in the viewport (tracked by IntersectionObserver),
     // schedule with high priority so it runs earlier than offscreen renderers.
     const priority = isVisible ? 'high' : 'normal'
-    cancelScheduledRender = scheduleRenderJob(() => {
-      cancelScheduledRender = null
+    scheduleCancelableRenderJob(() => {
       scheduled = false
       if (disposed || !updater)
         return
       updater.update(currentCode)
-    }, { priority })
+    }, priority)
   }
 
   const updateCode = (code: string, lang?: string) => enqueue(async () => {
