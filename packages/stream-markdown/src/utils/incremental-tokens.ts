@@ -638,6 +638,7 @@ export function createTokenIncrementalUpdater(
   let alive = true
   let target: HTMLElement | null | undefined = container
   let lastCode: string | null = null
+  let lastUpdateUsedProvidedTokenLines = false
   let updateSeq = 0
 
   return {
@@ -646,7 +647,8 @@ export function createTokenIncrementalUpdater(
         return 'noop'
       if (!target)
         return 'noop'
-      const skipSame = tokenLines == null && opts.skipSameCode !== false
+      const hasProvidedTokenLines = tokenLines !== undefined
+      const skipSame = !hasProvidedTokenLines && !lastUpdateUsedProvidedTokenLines && opts.skipSameCode !== false
       if (skipSame && lastCode === code) {
         const codeEl = target.querySelector('code')
         const styleRoot = getIncrementalStyleRoot(opts, target)
@@ -678,7 +680,7 @@ export function createTokenIncrementalUpdater(
       let onResultError: unknown
       const nextOpts: TokenIncrementalOptions = {
         ...opts,
-        ...(tokenLines ? { tokenLines } : {}),
+        ...(hasProvidedTokenLines ? { tokenLines } : {}),
         onResult: (result) => {
           try {
             opts.onResult?.(result)
@@ -691,8 +693,10 @@ export function createTokenIncrementalUpdater(
 
       const seq = ++updateSeq
       const res = updateCodeTokensIncremental(target, highlighter, code, nextOpts)
-      if (seq === updateSeq)
+      if (seq === updateSeq) {
         lastCode = code
+        lastUpdateUsedProvidedTokenLines = hasProvidedTokenLines
+      }
 
       if (onResultError !== undefined)
         throw onResultError
@@ -705,6 +709,7 @@ export function createTokenIncrementalUpdater(
       target.innerHTML = ''
       clearContainerRenderState(target)
       lastCode = null
+      lastUpdateUsedProvidedTokenLines = false
       updateSeq++
     },
     cancel: () => {},
@@ -712,6 +717,7 @@ export function createTokenIncrementalUpdater(
       alive = false
       target = null
       lastCode = null
+      lastUpdateUsedProvidedTokenLines = false
       updateSeq++
     },
   }

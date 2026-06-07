@@ -106,6 +106,7 @@ export function createShikiStreamCachedRenderer(
   const useRaf = options.scheduleInRaf ?? true
   let scheduled = false
   let cancelScheduledRender: (() => void) | null = null
+  let renderJobSeq = 0
   let pendingRender: { code: string, tokenLines?: ThemedToken[][] } | null = null
   let disposed = false
   let unregisterObserver: (() => void) | null = null
@@ -154,6 +155,7 @@ export function createShikiStreamCachedRenderer(
   }
 
   const cancelPendingRender = () => {
+    renderJobSeq++
     if (cancelScheduledRender) {
       cancelScheduledRender()
       cancelScheduledRender = null
@@ -164,14 +166,17 @@ export function createShikiStreamCachedRenderer(
   }
 
   const scheduleCancelableRenderJob = (job: () => void, priority: 'high' | 'normal') => {
+    const seq = ++renderJobSeq
     let ranSynchronously = false
     const cancel = scheduleRenderJob(() => {
       ranSynchronously = true
-      cancelScheduledRender = null
+      if (renderJobSeq === seq)
+        cancelScheduledRender = null
       job()
     }, { priority })
 
-    cancelScheduledRender = ranSynchronously ? null : cancel
+    if (renderJobSeq === seq)
+      cancelScheduledRender = ranSynchronously ? null : cancel
   }
 
   if (typeof window !== 'undefined' && container) {

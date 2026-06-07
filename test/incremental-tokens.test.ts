@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { createTokenIncrementalUpdater, renderCodeWithTokens, updateCodeTokensIncremental } from 'stream-markdown'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createTokenIncrementalUpdater as createSourceTokenIncrementalUpdater } from '../packages/stream-markdown/src/utils/incremental-tokens.js'
 import { normalizeCssColor } from '../packages/stream-markdown/src/utils/token-style.js'
 import { streamContent as tsMarkdown } from '../src/pages/markdown.js'
 import { markdownContent } from '../src/samples/content-markdown.js'
@@ -614,6 +615,42 @@ describe('updateCodeTokensIncremental', () => {
 
     expect(() => updater.update('same')).toThrow('consumer failed')
     expect(tokenizationCount).toBe(1)
+
+    updater.dispose()
+  })
+
+  it('does not skip retokenization after same-code explicit token lines', () => {
+    let tokenizationCount = 0
+    const countedHl = {
+      codeToThemedTokens(code: string) {
+        tokenizationCount++
+        return code.split('\n').map(line => [{
+          content: line,
+          color: '#0000ff',
+          fontStyle: 0,
+        }])
+      },
+    }
+
+    const updater = createSourceTokenIncrementalUpdater(container, countedHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+    })
+
+    updater.update('same', [[{
+      content: 'same',
+      color: '#ff0000',
+      fontStyle: 0,
+    }]])
+
+    expect(tokenizationCount).toBe(0)
+    expect((container.querySelector('code .line span') as HTMLElement).getAttribute('style')).toContain('color: #ff0000;')
+
+    updater.update('same')
+
+    expect(tokenizationCount).toBe(1)
+    expect((container.querySelector('code .line span') as HTMLElement).getAttribute('style')).toContain('color: #0000ff;')
 
     updater.dispose()
   })

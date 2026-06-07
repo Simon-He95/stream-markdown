@@ -53,6 +53,7 @@ export function createShikiStreamRenderer(
   const useRaf = options.scheduleInRaf ?? true
   let scheduled = false
   let cancelScheduledRender: (() => void) | null = null
+  let renderJobSeq = 0
   let disposed = false
   let unregisterObserver: (() => void) | null = null
   let isVisible = false
@@ -61,6 +62,7 @@ export function createShikiStreamRenderer(
   let opChain: Promise<unknown> = Promise.resolve()
 
   const cancelPendingRender = () => {
+    renderJobSeq++
     if (cancelScheduledRender) {
       cancelScheduledRender()
       cancelScheduledRender = null
@@ -70,14 +72,17 @@ export function createShikiStreamRenderer(
   }
 
   const scheduleCancelableRenderJob = (job: () => void, priority: 'high' | 'normal') => {
+    const seq = ++renderJobSeq
     let ranSynchronously = false
     const cancel = scheduleRenderJob(() => {
       ranSynchronously = true
-      cancelScheduledRender = null
+      if (renderJobSeq === seq)
+        cancelScheduledRender = null
       job()
     }, { priority })
 
-    cancelScheduledRender = ranSynchronously ? null : cancel
+    if (renderJobSeq === seq)
+      cancelScheduledRender = ranSynchronously ? null : cancel
   }
 
   const ensureHighlighter = async () => {

@@ -6,6 +6,7 @@ const queue: Array<() => void> = []
 type FrameHandle = number | ReturnType<typeof setTimeout>
 
 let rafId: FrameHandle | null = null
+let frameToken = 0
 let cancelScheduledFrame: ((id: FrameHandle) => void) | null = null
 let paused = false
 
@@ -78,6 +79,7 @@ function cancelFrame() {
   const id = rafId
   const cancel = cancelScheduledFrame
   rafId = null
+  frameToken++
   cancelScheduledFrame = null
   try {
     cancel?.(id)
@@ -93,8 +95,12 @@ function ensureFrame() {
   if (queue.length === 0)
     return
   const scheduler = getFrameScheduler()
+  const token = ++frameToken
   let ranSynchronously = false
   const run: FrameRequestCallback = () => {
+    if (token !== frameToken)
+      return
+
     ranSynchronously = true
     runFrame()
   }
