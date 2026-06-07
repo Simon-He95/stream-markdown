@@ -4,12 +4,20 @@ import { clearAll, getQueueLength, pause, resume } from '../packages/stream-mark
 import { createShikiStreamCachedRenderer } from '../packages/stream-markdown/src/utils/shiki-stream-cached-renderer.js'
 
 const shikiStreamMock = vi.hoisted(() => ({
-  enqueueResults: [] as any[],
+  enqueueResults: [] as Array<any | ((chunk: string) => any)>,
+  chunks: [] as string[],
 }))
 
 vi.mock('shiki-stream', () => ({
   ShikiStreamTokenizer: class {
-    enqueue = vi.fn(async () => shikiStreamMock.enqueueResults.shift() ?? { recall: 0, stable: [], unstable: [] })
+    enqueue = vi.fn(async (chunk: string) => {
+      shikiStreamMock.chunks.push(chunk)
+      const next = shikiStreamMock.enqueueResults.shift()
+      return typeof next === 'function'
+        ? next(chunk)
+        : next ?? { recall: 0, stable: [], unstable: [] }
+    })
+
     clear = vi.fn()
   },
 }))
@@ -26,6 +34,7 @@ vi.mock('../packages/stream-markdown/src/utils/highlight.js', () => ({
 describe('createShikiStreamCachedRenderer', () => {
   beforeEach(() => {
     shikiStreamMock.enqueueResults = []
+    shikiStreamMock.chunks = []
     document.body.innerHTML = ''
     document.head.innerHTML = ''
     ;(window as any).requestIdleCallback = (cb: IdleRequestCallback) => {
@@ -223,6 +232,40 @@ describe('createShikiStreamCachedRenderer', () => {
     expect(lines).toHaveLength(2)
     expect(lines[0].textContent).toBe('first')
     expect(lines[1].textContent).toBe('second')
+
+    renderer.dispose()
+  })
+
+  it('retokenizes the full code after fallback rendering from an empty token buffer', async () => {
+    shikiStreamMock.enqueueResults.push(
+      { recall: 0, stable: [{ content: '' }], unstable: [] },
+      (chunk: string) => ({
+        recall: 0,
+        stable: [{ content: chunk }],
+        unstable: [],
+      }),
+    )
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+    })
+
+    await renderer.updateCode('first')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(container.querySelector('code')?.textContent).toBe('first')
+
+    await renderer.updateCode('first second')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(shikiStreamMock.chunks).toEqual(['first', 'first second'])
+    expect(container.querySelector('code')?.textContent).toBe('first second')
 
     renderer.dispose()
   })

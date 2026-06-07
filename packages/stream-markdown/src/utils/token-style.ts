@@ -252,6 +252,9 @@ function resolveStyleRoot(target?: Node | null): TokenStyleRoot | null {
     if (isDocumentRoot(target) || isShadowRoot(target))
       return target
 
+    if (target.isConnected === false)
+      return null
+
     const root = typeof target.getRootNode === 'function'
       ? target.getRootNode()
       : null

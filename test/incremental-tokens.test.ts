@@ -452,6 +452,23 @@ describe('updateCodeTokensIncremental', () => {
     expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
   })
 
+  it('uses inline token styles for detached incremental containers by default', () => {
+    const detached = document.createElement('div')
+
+    updateCodeTokensIncremental(detached, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const token = detached.querySelector('code .line span') as HTMLElement
+
+    expect(token.className).toBe('')
+    expect(token.getAttribute('style')).toContain('color: #ff0000;')
+    expect(token.getAttribute('style')).toContain('font-style: italic;')
+    expect(token.getAttribute('style')).toContain('font-weight: 600;')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+  })
+
   it('appends a new line incrementally', () => {
     updateCodeTokensIncremental(container, hl as any, 'a', { lang: 'ts', theme: 'vitesse-dark' })
     const res2 = updateCodeTokensIncremental(container, hl as any, 'a\nb', { lang: 'ts', theme: 'vitesse-dark' })

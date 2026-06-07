@@ -245,6 +245,7 @@ export function createShikiStreamCachedRenderer(
 
   const scheduleBufferedRender = (code: string) => {
     if (code.length > 0 && !hasBufferedCodeContent()) {
+      tokenBuffer = []
       scheduleRender(code)
       return
     }
@@ -290,7 +291,7 @@ export function createShikiStreamCachedRenderer(
 
     const canAppend = !langChanged
       && options.useGrammarState !== false
-      && tokenBuffer.length > 0
+      && hasBufferedCodeContent()
       && !!prevCode
       && code.startsWith(prevCode)
     if (!canAppend) {
