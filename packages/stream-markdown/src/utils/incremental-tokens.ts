@@ -426,6 +426,13 @@ export function updateCodeTokensIncremental(
   if (previousSignature !== signature)
     return renderFull()
 
+  const prevCode = LAST_CODE.get(container)
+  if (typeof prevCode !== 'string')
+    return renderFull()
+
+  if ((codeEl.textContent ?? '').replace(/\r/g, '') !== prevCode.replace(/\r/g, ''))
+    return renderFull()
+
   const oldLines = getCodeLineElements(codeEl, lineClass)
   const tokenLines = providedTokenLines
     ? normalizeTokenLinesForCode(providedTokenLines, code, true)
@@ -436,7 +443,6 @@ export function updateCodeTokensIncremental(
   const newLen = tokenLines.length
   const oldLen = oldLines.length
 
-  const prevCode = LAST_CODE.get(container)
   const canAppendOnly = opts.appendOnlyFastPath === true
     && typeof prevCode === 'string'
     && prevCode.length > 0

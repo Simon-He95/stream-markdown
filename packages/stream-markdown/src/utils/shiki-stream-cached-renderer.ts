@@ -169,9 +169,10 @@ export function createShikiStreamCachedRenderer(
     const seq = ++renderJobSeq
     let ranSynchronously = false
     const cancel = scheduleRenderJob(() => {
+      if (renderJobSeq !== seq)
+        return
       ranSynchronously = true
-      if (renderJobSeq === seq)
-        cancelScheduledRender = null
+      cancelScheduledRender = null
       job()
     }, { priority })
 

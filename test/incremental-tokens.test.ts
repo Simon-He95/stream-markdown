@@ -93,6 +93,44 @@ describe('updateCodeTokensIncremental', () => {
     expect(container.querySelector('code')?.textContent).toBe('a\nb')
   })
 
+  it('falls back to full render when previously tracked DOM was externally mutated', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const codeEl = container.querySelector('code')!
+    codeEl.textContent = 'external stale text'
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'b', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code')?.textContent).toBe('b')
+    expect(container.querySelectorAll('code .line')).toHaveLength(1)
+    expect(container.querySelector('code')?.textContent).not.toContain('external')
+  })
+
+  it('falls back to full render when tracked line structure was externally removed', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    container.querySelector('code')!.innerHTML = '<span>not-a-line</span>'
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'a\nbc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code')?.textContent).toBe('a\nbc')
+    expect(container.querySelectorAll('code .line')).toHaveLength(2)
+  })
+
   it('unobserves scheduled containers after the task runs', async () => {
     vi.resetModules()
 
