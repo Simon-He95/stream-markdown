@@ -1,7 +1,7 @@
 import type { TokenIncrementalOptions, TokenIncrementalUpdater } from './incremental-tokens.js'
 import type { ThemedToken } from './shiki-render.js'
 import type { ShikiStreamRendererOptions } from './shiki-stream-renderer.js'
-import { ShikiStreamTokenizer } from 'shiki-stream'
+import { ShikiStreamTokenizer } from '@shikijs/stream'
 import { registerHighlight } from './highlight.js'
 import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
@@ -10,7 +10,7 @@ import { observeElement } from './shared-intersection-observer.js'
 export interface ShikiStreamCachedRendererOptions extends ShikiStreamRendererOptions {
   /**
    * If true (default), attempt to reuse Shiki grammar state for appended
-   * content via shiki-stream. Set to false to always retokenize from scratch.
+   * content via @shikijs/stream. Set to false to always retokenize from scratch.
    */
   useGrammarState?: boolean
 }
@@ -54,7 +54,7 @@ function tokensToLines(tokens: ThemedToken[]): ThemedToken[][] {
 }
 
 /**
- * Renderer that reuses shiki-stream's tokenizer (grammarState-aware) to avoid
+ * Renderer that reuses @shikijs/stream's tokenizer (grammarState-aware) to avoid
  * re-tokenizing stable prefixes when code arrives incrementally.
  *
  * API mirrors createShikiStreamRenderer: updateCode(lang?), setTheme, dispose.

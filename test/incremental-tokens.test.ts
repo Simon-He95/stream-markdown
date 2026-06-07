@@ -473,6 +473,37 @@ describe('updateCodeTokensIncremental', () => {
     updater.dispose()
   })
 
+  it('keeps direct updater same-code state when onResult throws', () => {
+    let tokenizationCount = 0
+    const countedHl = {
+      codeToThemedTokens(code: string) {
+        tokenizationCount++
+        return code.split('\n').map(line => [{
+          content: line,
+          color: '#ff0000',
+          fontStyle: 0,
+        }])
+      },
+    }
+
+    const updater = createTokenIncrementalUpdater(container, countedHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      onResult: () => {
+        throw new Error('consumer failed')
+      },
+    })
+
+    expect(() => updater.update('same')).toThrow('consumer failed')
+    expect(container.querySelector('code')?.textContent).toBe('same')
+    expect(tokenizationCount).toBe(1)
+
+    expect(() => updater.update('same')).toThrow('consumer failed')
+    expect(tokenizationCount).toBe(1)
+
+    updater.dispose()
+  })
+
   it('keeps skip-same fast path state after reentrant updater updates', () => {
     let tokenizationCount = 0
     const countedHl = {

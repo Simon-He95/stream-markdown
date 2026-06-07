@@ -255,7 +255,7 @@ export interface TokenIncrementalOptions extends Omit<RenderOptions, 'preClass' 
    * Optional precomputed token lines. When provided, the highlighter will NOT
    * be invoked and these tokens will be used directly (after padding to match
    * the code's line count). Useful for callers that cache grammar state (e.g.,
-   * shiki-stream) and want to avoid re-tokenizing identical prefixes.
+   * @shikijs/stream) and want to avoid re-tokenizing identical prefixes.
    */
   tokenLines?: ThemedToken[][]
   onResult?: (result: UpdateResult) => void
@@ -607,11 +607,28 @@ export function createTokenIncrementalUpdater(
       // `opts.onResult` may synchronously re-enter `update()` from inside
       // `updateCodeTokensIncremental`. Do not let the outer call overwrite the
       // newer `lastCode` written by the nested update.
+      let onResultError: unknown
+      const nextOpts: TokenIncrementalOptions = {
+        ...opts,
+        ...(tokenLines ? { tokenLines } : {}),
+        onResult: (result) => {
+          try {
+            opts.onResult?.(result)
+          }
+          catch (error) {
+            onResultError = error
+          }
+        },
+      }
+
       const seq = ++updateSeq
-      const nextOpts = tokenLines ? { ...opts, tokenLines } : opts
       const res = updateCodeTokensIncremental(target, highlighter, code, nextOpts)
       if (seq === updateSeq)
         lastCode = code
+
+      if (onResultError !== undefined)
+        throw onResultError
+
       return res
     },
     reset: () => {
