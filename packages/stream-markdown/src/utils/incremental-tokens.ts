@@ -666,6 +666,7 @@ interface ScheduledTask {
   tokenLines?: ThemedToken[][]
   // estimated DOM nodes this task will create (approx)
   estNodes?: number
+  shouldRun?: () => boolean
 }
 
 type IdleHandle = number | ReturnType<typeof setTimeout>
@@ -694,7 +695,14 @@ class TokenUpdateScheduler {
     }
   }
 
-  schedule(container: HTMLElement, highlighter: Highlighter, code: string, opts: TokenIncrementalOptions, tokenLines?: ThemedToken[][]) {
+  schedule(
+    container: HTMLElement,
+    highlighter: Highlighter,
+    code: string,
+    opts: TokenIncrementalOptions,
+    tokenLines?: ThemedToken[][],
+    shouldRun?: () => boolean,
+  ) {
     // Deduplicate: if a task already exists for this container, replace its payload
     const prev = this.byContainer.get(container)
     if (prev) {
@@ -704,6 +712,7 @@ class TokenUpdateScheduler {
       prev.opts = opts
       prev.tokenLines = tokenLines
       prev.estNodes = estimateNodeCost(code)
+      prev.shouldRun = shouldRun
       return prev.id
     }
 
@@ -715,6 +724,7 @@ class TokenUpdateScheduler {
       opts,
       tokenLines,
       estNodes: estimateNodeCost(code),
+      shouldRun,
     }
     this.queue.push(task)
     this.byContainer.set(container, task)
@@ -831,6 +841,12 @@ class TokenUpdateScheduler {
       const task = this.queue.splice(idx, 1)[0]
       this.byContainer.delete(task.container)
 
+      if (task.shouldRun && !task.shouldRun()) {
+        if (!this.byContainer.has(task.container))
+          this.stopObserving(task.container)
+        continue
+      }
+
       // If this task has an estimated node cost and it would exceed the
       // remaining budget, push it back and stop processing to avoid long tasks.
       // However, if this is the first task this tick (nodesProcessed === 0)
@@ -946,6 +962,7 @@ export function createScheduledTokenIncrementalUpdater(
   let pendingCode: string | null = null
   let pendingTokenLines: ThemedToken[][] | undefined
   let timer: ReturnType<typeof setTimeout> | null = null
+  let updateGeneration = 0
 
   const cancelScheduledTask = () => {
     if (!target || scheduledTaskId == null)
@@ -956,6 +973,7 @@ export function createScheduledTokenIncrementalUpdater(
   }
 
   const cancelPendingWork = () => {
+    updateGeneration++
     if (timer !== null) {
       clearTimeout(timer)
       timer = null
@@ -977,6 +995,7 @@ export function createScheduledTokenIncrementalUpdater(
     pendingTokenLines = undefined
 
     const userOnResult = opts.onResult
+    const taskGeneration = updateGeneration
     let taskId = -1
     let completedSynchronously = false
 
@@ -985,14 +1004,21 @@ export function createScheduledTokenIncrementalUpdater(
       appendOnlyFastPath: opts.appendOnlyFastPath ?? false,
       onResult: (result) => {
         completedSynchronously = true
-        if (scheduledTaskId === taskId)
+        if (updateGeneration === taskGeneration && scheduledTaskId === taskId)
           scheduledTaskId = null
         callScheduledOnResult(userOnResult, result)
       },
     }
 
     // Schedule the update; result will be delivered via opts.onResult when executed
-    taskId = globalTokenUpdateScheduler.schedule(targetEl, highlighter, code, updateOpts, tokenLines)
+    taskId = globalTokenUpdateScheduler.schedule(
+      targetEl,
+      highlighter,
+      code,
+      updateOpts,
+      tokenLines,
+      () => alive && target === targetEl && updateGeneration === taskGeneration,
+    )
     if (!completedSynchronously)
       scheduledTaskId = taskId
   }
@@ -1012,6 +1038,7 @@ export function createScheduledTokenIncrementalUpdater(
       if (!alive || !target)
         return 'noop'
 
+      updateGeneration++
       cancelScheduledTask()
       pendingCode = code
       pendingTokenLines = tokenLines
