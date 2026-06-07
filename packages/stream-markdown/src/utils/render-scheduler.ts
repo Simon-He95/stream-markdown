@@ -31,6 +31,7 @@ export function getQueueLength() {
 
 export function pause() {
   paused = true
+  cancelFrame()
 }
 
 export function resume() {
@@ -116,6 +117,10 @@ function ensureFrame() {
 function runFrame() {
   rafId = null
   cancelScheduledFrame = null
+
+  if (paused)
+    return
+
   const start = now()
   while (queue.length > 0) {
     const job = queue.shift()!

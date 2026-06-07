@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearAll, drain, pause, resume, scheduleRenderJob } from '../packages/stream-markdown/src/utils/render-scheduler.js'
+import { clearAll, drain, getQueueLength, pause, resume, scheduleRenderJob } from '../packages/stream-markdown/src/utils/render-scheduler.js'
 
 describe('render scheduler', () => {
   beforeEach(() => {
@@ -11,6 +11,71 @@ describe('render scheduler', () => {
   afterEach(() => {
     resume()
     clearAll()
+  })
+
+  it('does not run an already scheduled frame after pause', () => {
+    const origGlobalRaf = (globalThis as any).requestAnimationFrame
+    const origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame
+    const origWindowRaf = (window as any).requestAnimationFrame
+    const origWindowCancelRaf = (window as any).cancelAnimationFrame
+
+    const rafCallbacks: FrameRequestCallback[] = []
+    const requestAnimationFrame = vi.fn((cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb)
+      return rafCallbacks.length
+    })
+    const cancelAnimationFrame = vi.fn()
+
+    try {
+      ;(globalThis as any).requestAnimationFrame = requestAnimationFrame
+      ;(globalThis as any).cancelAnimationFrame = cancelAnimationFrame
+      ;(window as any).requestAnimationFrame = requestAnimationFrame
+      ;(window as any).cancelAnimationFrame = cancelAnimationFrame
+
+      resume()
+
+      const order: string[] = []
+      scheduleRenderJob(() => order.push('run'))
+
+      expect(rafCallbacks).toHaveLength(1)
+
+      pause()
+      expect(cancelAnimationFrame).toHaveBeenCalledWith(1)
+
+      rafCallbacks.shift()?.(performance.now())
+
+      expect(order).toEqual([])
+      expect(getQueueLength()).toBe(1)
+
+      resume()
+
+      expect(rafCallbacks).toHaveLength(1)
+      rafCallbacks.shift()?.(performance.now())
+
+      expect(order).toEqual(['run'])
+      expect(getQueueLength()).toBe(0)
+    }
+    finally {
+      if (origGlobalRaf === undefined)
+        delete (globalThis as any).requestAnimationFrame
+      else
+        (globalThis as any).requestAnimationFrame = origGlobalRaf
+
+      if (origGlobalCancelRaf === undefined)
+        delete (globalThis as any).cancelAnimationFrame
+      else
+        (globalThis as any).cancelAnimationFrame = origGlobalCancelRaf
+
+      if (origWindowRaf === undefined)
+        delete (window as any).requestAnimationFrame
+      else
+        (window as any).requestAnimationFrame = origWindowRaf
+
+      if (origWindowCancelRaf === undefined)
+        delete (window as any).cancelAnimationFrame
+      else
+        (window as any).cancelAnimationFrame = origWindowCancelRaf
+    }
   })
 
   it('cancels only its own queued job when the same function is scheduled more than once', () => {

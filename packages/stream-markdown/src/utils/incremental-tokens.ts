@@ -161,29 +161,50 @@ function lineInnerHtml(
   return `${ln}${tokensHtml}`
 }
 
+function hashSignaturePart(hash: number, value: string): number {
+  let next = hash >>> 0
+
+  for (let i = 0; i < value.length; i++) {
+    next ^= value.charCodeAt(i)
+    next = Math.imul(next, 0x01000193)
+  }
+
+  return next >>> 0
+}
+
 function lineSignature(tokens: ThemedToken[], showLineNumbers: boolean, lineNumber?: number): string {
-  let sig = showLineNumbers && typeof lineNumber === 'number'
-    ? `#${lineNumber}|`
-    : '#|'
+  const lineNumberKey = showLineNumbers && typeof lineNumber === 'number'
+    ? String(lineNumber)
+    : ''
+
+  let hash = hashSignaturePart(0x811C9DC5, `#${lineNumberKey}|`)
+  let totalLength = 0
+  let segmentCount = 0
   let i = 0
+
   while (i < tokens.length) {
-    const t = tokens[i]
-    const style = getTokenStyleSignature(t.color, t.fontStyle)
-    let content = t.content
-    i++
+    const style = getTokenStyleSignature(tokens[i].color, tokens[i].fontStyle)
+    let segmentLength = 0
+
+    hash = hashSignaturePart(hash, style)
+    hash = hashSignaturePart(hash, '\0')
 
     while (i < tokens.length) {
-      const t2 = tokens[i]
-      const style2 = getTokenStyleSignature(t2.color, t2.fontStyle)
-      if (style2 !== style)
+      const token = tokens[i]
+      if (getTokenStyleSignature(token.color, token.fontStyle) !== style)
         break
-      content += t2.content
+
+      hash = hashSignaturePart(hash, token.content)
+      segmentLength += token.content.length
       i++
     }
 
-    sig += `${content.length}:${content}|${style};`
+    hash = hashSignaturePart(hash, `\u0001${segmentLength}\u0002`)
+    totalLength += segmentLength
+    segmentCount++
   }
-  return sig
+
+  return `${lineNumberKey}:${segmentCount}:${totalLength}:${hash.toString(36)}`
 }
 
 /**
