@@ -51,6 +51,8 @@ const pendingLangs = new Set<string>()
 let pendingThemes: HighlightTheme[] = []
 const loadedLangs = new Set<string>()
 const loadedBundledThemes = new Set<string>()
+const loadedNamedThemeObjects = new Map<string, object>()
+let loadedAnonymousThemeObjects = new WeakSet<object>()
 let applyPromise: Promise<void> = Promise.resolve()
 
 function getThemeId(theme: HighlightTheme): string | undefined {
@@ -61,20 +63,57 @@ function getThemeId(theme: HighlightTheme): string | undefined {
   return typeof name === 'string' ? name : undefined
 }
 
+function isThemeObject(theme: HighlightTheme): theme is HighlightTheme & object {
+  return !!theme && typeof theme === 'object'
+}
+
+function isThemeLoaded(theme: HighlightTheme): boolean {
+  const id = getThemeId(theme)
+
+  if (typeof theme === 'string')
+    return loadedBundledThemes.has(theme) && !loadedNamedThemeObjects.has(theme)
+
+  if (!isThemeObject(theme))
+    return false
+
+  if (id)
+    return loadedNamedThemeObjects.get(id) === theme
+
+  return loadedAnonymousThemeObjects.has(theme)
+}
+
+function markThemeLoaded(theme: HighlightTheme): void {
+  const id = getThemeId(theme)
+
+  if (typeof theme === 'string') {
+    loadedBundledThemes.add(theme)
+    loadedNamedThemeObjects.delete(theme)
+    return
+  }
+
+  if (!isThemeObject(theme))
+    return
+
+  if (id) {
+    loadedNamedThemeObjects.set(id, theme)
+    loadedBundledThemes.delete(id)
+    return
+  }
+
+  loadedAnonymousThemeObjects.add(theme)
+}
+
 function markInitialLoaded(langs: string[], themes: HighlightTheme[]) {
   for (const lang of langs)
     loadedLangs.add(lang)
 
-  for (const theme of themes) {
-    if (typeof theme === 'string')
-      loadedBundledThemes.add(theme)
-  }
+  for (const theme of themes)
+    markThemeLoaded(theme)
 }
 
 function removeInitiallyLoadedPendingThemes(themes: HighlightTheme[]) {
   const stringThemes = new Set<string>()
   const objectThemes = new Set<object>()
-  const objectThemeIds = new Set<string>()
 
   for (const theme of themes) {
     if (typeof theme === 'string') {
@@ -82,27 +121,15 @@ function removeInitiallyLoadedPendingThemes(themes: HighlightTheme[]) {
       continue
     }
 
-    if (theme && typeof theme === 'object') {
+    if (isThemeObject(theme))
       objectThemes.add(theme)
-      const id = getThemeId(theme)
-      if (id)
-        objectThemeIds.add(id)
-    }
   }
 
   pendingThemes = pendingThemes.filter((theme) => {
     if (typeof theme === 'string')
       return !stringThemes.has(theme)
 
-    if (theme && typeof theme === 'object') {
-      if (objectThemes.has(theme))
-        return false
-
-      const id = getThemeId(theme)
-      return !id || !objectThemeIds.has(id)
-    }
-
-    return true
+    return !(isThemeObject(theme) && objectThemes.has(theme))
   })
 }
 
@@ -113,68 +140,112 @@ function addPendingLangs(langs: string[]) {
   }
 }
 
-function addPendingThemes(themes: HighlightTheme[]) {
-  const pendingIds = new Set<string>()
-  for (const t of pendingThemes) {
-    const id = getThemeId(t)
-    if (id)
-      pendingIds.add(id)
-  }
+function findPendingThemeIndexById(id: string): number {
+  return pendingThemes.findIndex(theme => getThemeId(theme) === id)
+}
 
-  for (const t of themes) {
-    if (typeof t === 'string') {
-      if (!loadedBundledThemes.has(t) && !pendingIds.has(t)) {
-        pendingIds.add(t)
-        pendingThemes.push(t)
+function hasPendingThemeObject(theme: object): boolean {
+  return pendingThemes.includes(theme as HighlightTheme)
+}
+
+function addPendingThemes(themes: HighlightTheme[]) {
+  for (const theme of themes) {
+    const id = getThemeId(theme)
+
+    if (id) {
+      const existingIndex = findPendingThemeIndexById(id)
+      if (existingIndex !== -1) {
+        pendingThemes[existingIndex] = theme
+        continue
       }
     }
-    else {
-      const id = getThemeId(t)
-      if (id) {
-        if (!pendingIds.has(id)) {
-          pendingIds.add(id)
-          pendingThemes.push(t)
-        }
-      }
-      else {
-        pendingThemes.push(t)
-      }
+    else if (isThemeObject(theme) && hasPendingThemeObject(theme)) {
+      continue
     }
+
+    if (isThemeLoaded(theme))
+      continue
+
+    pendingThemes.push(theme)
   }
 }
 
-async function applyPending(highlighter: Highlighter) {
-  // Serialize loads to avoid overlapping loadTheme/loadLanguage on the same instance.
-  applyPromise = applyPromise.then(async () => {
-    const anyHl = highlighter as any
-    const langs = Array.from(pendingLangs).filter(l => !loadedLangs.has(l))
-    const themes = pendingThemes.filter(t => typeof t !== 'string' || !loadedBundledThemes.has(t))
-    pendingLangs.clear()
-    pendingThemes = []
-    let didMutateHighlighter = false
+function requeuePendingThemes(themes: HighlightTheme[]) {
+  for (const theme of themes) {
+    if (isThemeLoaded(theme))
+      continue
 
+    const id = getThemeId(theme)
+    if (id && findPendingThemeIndexById(id) !== -1)
+      continue
+    if (!id && isThemeObject(theme) && hasPendingThemeObject(theme))
+      continue
+
+    pendingThemes.push(theme)
+  }
+}
+
+async function loadPendingIntoHighlighter(highlighter: Highlighter): Promise<void> {
+  const anyHl = highlighter as any
+  const langs = Array.from(pendingLangs).filter(l => !loadedLangs.has(l))
+  const themes = pendingThemes.filter(t => !isThemeLoaded(t))
+  pendingLangs.clear()
+  pendingThemes = []
+
+  let didMutateHighlighter = false
+  let langIndex = 0
+  let themeIndex = 0
+
+  try {
     if (langs.length > 0 && typeof anyHl.loadLanguage === 'function') {
-      for (const l of langs) {
+      for (; langIndex < langs.length; langIndex++) {
+        const l = langs[langIndex]
+        if (loadedLangs.has(l))
+          continue
+
         await anyHl.loadLanguage(l)
         loadedLangs.add(l)
         didMutateHighlighter = true
       }
     }
     if (themes.length > 0 && typeof anyHl.loadTheme === 'function') {
-      for (const t of themes) {
+      for (; themeIndex < themes.length; themeIndex++) {
+        const t = themes[themeIndex]
+        if (isThemeLoaded(t))
+          continue
+
         await anyHl.loadTheme(t)
-        if (typeof t === 'string')
-          loadedBundledThemes.add(t)
+        markThemeLoaded(t)
         didMutateHighlighter = true
       }
     }
+  }
+  catch (error) {
+    for (const l of langs.slice(langIndex)) {
+      if (!loadedLangs.has(l))
+        pendingLangs.add(l)
+    }
 
+    requeuePendingThemes(themes.slice(themeIndex))
+    throw error
+  }
+  finally {
     if (didMutateHighlighter) {
       clearTokenCache(highlighter)
       clearHtmlCache(highlighter)
     }
-  })
-  return applyPromise
+  }
+}
+
+async function applyPending(highlighter: Highlighter) {
+  // Serialize loads to avoid overlapping loadTheme/loadLanguage on the same instance.
+  const run = applyPromise
+    .catch(() => undefined)
+    .then(() => loadPendingIntoHighlighter(highlighter))
+
+  applyPromise = run.catch(() => undefined)
+
+  return run
 }
 
 export async function registerHighlight(options: {
@@ -233,5 +304,7 @@ export function disposeHighlighter() {
   pendingThemes = []
   loadedLangs.clear()
   loadedBundledThemes.clear()
+  loadedNamedThemeObjects.clear()
+  loadedAnonymousThemeObjects = new WeakSet<object>()
   applyPromise = Promise.resolve()
 }
