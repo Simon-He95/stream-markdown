@@ -1,6 +1,6 @@
-import type { createTokenIncrementalUpdater } from './incremental-tokens.js'
-import { registerHighlight } from './highlight.js'
-import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
+import type { TokenIncrementalOptions, TokenIncrementalUpdater } from './incremental-tokens.js'
+import { defaultLanguages, registerHighlight } from './highlight.js'
+import { createScheduledTokenIncrementalUpdater, createTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
 import { observeElement } from './shared-intersection-observer.js'
 
@@ -20,6 +20,21 @@ export interface ShikiStreamRendererOptions {
   // optional per-renderer suggestion for scheduler time budget (ms). If set,
   // this will call setTimeBudget() which affects the shared scheduler.
   timeBudget?: number
+  throttleMs?: number
+  compareMode?: TokenIncrementalOptions['compareMode']
+  skipSameCode?: boolean
+  preClass?: string
+  codeClass?: string
+  lineClass?: string
+  showLineNumbers?: boolean
+  startingLineNumber?: number
+  tokenCache?: boolean
+  tokenCacheMaxEntries?: number
+  htmlCache?: boolean
+  htmlCacheMaxEntries?: number
+  styleRoot?: Node | null
+  tokenStyleMode?: TokenIncrementalOptions['tokenStyleMode']
+  onResult?: TokenIncrementalOptions['onResult']
 }
 
 export function createShikiStreamRenderer(
@@ -30,12 +45,13 @@ export function createShikiStreamRenderer(
   let currentLang = options.lang
   let currentTheme = options.theme ?? 'vitesse-dark'
   let highlighter: any | null = null
-  let updater: ReturnType<typeof createTokenIncrementalUpdater> | null = null
+  let updater: TokenIncrementalUpdater | null = null
   // Coalesce frequent updateCode calls into a single rAF-driven update to
   // avoid re-tokenizing on every keystream chunk.
   const useRaf = options.scheduleInRaf ?? true
   let scheduled = false
-  let rafId: number | null = null
+  let cancelScheduledRender: (() => void) | null = null
+  let renderJobSeq = 0
   let disposed = false
   let unregisterObserver: (() => void) | null = null
   let isVisible = false
@@ -43,32 +59,79 @@ export function createShikiStreamRenderer(
   // and tokenization work (e.g. theme load promise not finished but render starts).
   let opChain: Promise<unknown> = Promise.resolve()
 
-  const cancelFrame = () => {
-    if (rafId != null) {
-      cancelAnimationFrame(rafId)
-      rafId = null
+  const getHighlightLangs = (lang = currentLang): string[] | undefined => {
+    const optionLangs = options.langs?.length ? options.langs : undefined
+    const baseLangs = optionLangs ?? defaultLanguages
+
+    if (!lang || lang === 'plaintext' || baseLangs.includes(lang))
+      return optionLangs
+
+    return [...baseLangs, lang]
+  }
+
+  const cancelPendingRender = () => {
+    renderJobSeq++
+    if (cancelScheduledRender) {
+      cancelScheduledRender()
+      cancelScheduledRender = null
+    }
+    scheduled = false
+    updater?.cancel?.()
+  }
+
+  const scheduleCancelableRenderJob = (job: () => void, priority: 'high' | 'normal') => {
+    const seq = ++renderJobSeq
+    let ranSynchronously = false
+    const cancel = scheduleRenderJob(() => {
+      if (renderJobSeq !== seq)
+        return
+      ranSynchronously = true
+      cancelScheduledRender = null
+      job()
+    }, { priority })
+
+    if (renderJobSeq === seq)
+      cancelScheduledRender = ranSynchronously ? null : cancel
+  }
+
+  const ensureHighlighter = async (lang = currentLang) => {
+    if (disposed)
+      return
+    const nextHighlighter = await registerHighlight({ langs: getHighlightLangs(lang), themes: options.themes as any })
+    if (disposed)
+      return
+    highlighter = nextHighlighter
+  }
+
+  const hasLoadedTheme = (theme: string) => {
+    if (!highlighter)
+      return false
+
+    const anyHl = highlighter as any
+    if (typeof anyHl.getTheme !== 'function')
+      return false
+
+    try {
+      return !!anyHl.getTheme(theme)
+    }
+    catch {
+      return false
     }
   }
 
-  const ensureHighlighter = async () => {
-    if (disposed)
-      return
-    highlighter = await registerHighlight({ langs: options.langs, themes: options.themes as any })
-  }
-
-  const ensureThemeLoaded = async (theme: string) => {
+  const ensureThemeLoaded = async (theme: string, lang = currentLang) => {
     if (!theme || disposed)
       return
     if (!highlighter)
-      await ensureHighlighter()
+      await ensureHighlighter(lang)
     if (disposed || !highlighter)
       return
-    const anyHl = highlighter as any
-    if (typeof anyHl.loadTheme === 'function') {
-      // Always await: shiki.loadTheme is async and tokenization may throw if
-      // the theme is referenced before it's registered.
-      await anyHl.loadTheme(theme)
-    }
+    if (hasLoadedTheme(theme))
+      return
+
+    const nextHighlighter = await registerHighlight({ langs: getHighlightLangs(lang), themes: [theme as any] })
+    if (!disposed)
+      highlighter = nextHighlighter
   }
 
   const enqueue = <T>(task: () => Promise<T>) => {
@@ -87,24 +150,46 @@ export function createShikiStreamRenderer(
   }
 
   // If a per-renderer timeBudget is provided, set the shared scheduler budget.
-  if (typeof options.timeBudget === 'number' && options.timeBudget >= 0) {
+  if (typeof options.timeBudget === 'number' && Number.isFinite(options.timeBudget) && options.timeBudget >= 0) {
     setTimeBudget(options.timeBudget)
   }
 
+  const getUpdaterOptions = (): TokenIncrementalOptions => ({
+    lang: currentLang ?? 'plaintext',
+    theme: currentTheme,
+    preClass: options.preClass,
+    codeClass: options.codeClass,
+    lineClass: options.lineClass,
+    showLineNumbers: options.showLineNumbers,
+    startingLineNumber: options.startingLineNumber,
+    tokenCache: options.tokenCache,
+    tokenCacheMaxEntries: options.tokenCacheMaxEntries,
+    htmlCache: options.htmlCache,
+    htmlCacheMaxEntries: options.htmlCacheMaxEntries,
+    styleRoot: options.styleRoot,
+    tokenStyleMode: options.tokenStyleMode,
+    compareMode: options.compareMode,
+    skipSameCode: options.skipSameCode,
+    // Renderer-level streaming is not append-only safe. Appending source text can
+    // change tokenization before the previous last line: multiline comments,
+    // strings, Markdown fences, heredocs, etc. Keep this unsafe optimization only
+    // on the low-level updater API where callers can guarantee earlier tokens are
+    // immutable.
+    appendOnlyFastPath: false,
+    throttleMs: options.throttleMs,
+    onResult: options.onResult,
+  })
+
   const reinitUpdater = () => {
     updater?.dispose()
-    // prefer scheduled (deferred) updater to avoid blocking when many renderers
-    // update at once. Falls back to immediate updater if needed elsewhere.
-    updater = createScheduledTokenIncrementalUpdater(container, highlighter, {
-      lang: currentLang ?? 'plaintext',
-      theme: currentTheme,
-    })
+    if (disposed || !highlighter)
+      return
+    const createUpdater = useRaf ? createScheduledTokenIncrementalUpdater : createTokenIncrementalUpdater
+    updater = createUpdater(container, highlighter, getUpdaterOptions())
   }
 
   const scheduleRender = () => {
     if (disposed)
-      return
-    if (scheduled)
       return
     if (!useRaf) {
       // Immediate apply when rAF scheduling is disabled (e.g., caller batches externally)
@@ -123,13 +208,12 @@ export function createShikiStreamRenderer(
     // currently visible in the viewport (tracked by IntersectionObserver),
     // schedule with high priority so it runs earlier than offscreen renderers.
     const priority = isVisible ? 'high' : 'normal'
-    scheduleRenderJob(() => {
+    scheduleCancelableRenderJob(() => {
       scheduled = false
-      if (!updater)
+      if (disposed || !updater)
         return
       updater.update(currentCode)
-    }, { priority })
-    rafId = null
+    }, priority)
   }
 
   const updateCode = (code: string, lang?: string) => enqueue(async () => {
@@ -138,11 +222,14 @@ export function createShikiStreamRenderer(
     const nextLang = lang ?? currentLang
     const langChanged = nextLang !== currentLang
     currentCode = code
+    cancelPendingRender()
 
     if (!highlighter || langChanged) {
       currentLang = nextLang
-      await ensureHighlighter()
-      await ensureThemeLoaded(currentTheme)
+      await ensureHighlighter(nextLang)
+      await ensureThemeLoaded(currentTheme, nextLang)
+      if (disposed)
+        return
       reinitUpdater()
     }
     else if (!updater) {
@@ -159,8 +246,9 @@ export function createShikiStreamRenderer(
       return
     if (!theme || theme === currentTheme)
       return
+    cancelPendingRender()
     // Make sure the target theme is loaded on the highlighter before switching.
-    await ensureThemeLoaded(theme)
+    await ensureThemeLoaded(theme, currentLang)
     if (disposed)
       return
     currentTheme = theme
@@ -170,14 +258,14 @@ export function createShikiStreamRenderer(
   })
 
   const dispose = () => {
+    disposed = true
+    cancelPendingRender()
     updater?.dispose()
     updater = null
     if (unregisterObserver) {
       unregisterObserver()
       unregisterObserver = null
     }
-    disposed = true
-    cancelFrame()
   }
 
   const getState = () => ({ code: currentCode, lang: currentLang, theme: currentTheme })

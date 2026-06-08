@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { createTokenIncrementalUpdater, updateCodeTokensIncremental } from 'stream-markdown'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  createTokenIncrementalUpdater as createSourceTokenIncrementalUpdater,
+  updateCodeTokensIncremental as updateSourceCodeTokensIncremental,
+} from '../packages/stream-markdown/src/utils/incremental-tokens.js'
+import { renderCodeWithTokens } from '../packages/stream-markdown/src/utils/shiki-render.js'
+import { normalizeCssColor } from '../packages/stream-markdown/src/utils/token-style.js'
 import { streamContent as tsMarkdown } from '../src/pages/markdown.js'
 import { markdownContent } from '../src/samples/content-markdown.js'
 import { phpContent } from '../src/samples/content-php.js'
@@ -15,11 +21,44 @@ const hl = {
   },
 }
 
+const coloredHl = {
+  codeToThemedTokens(code: string) {
+    return code.split('\n').map(line => [{
+      content: line,
+      color: '#ff0000',
+      fontStyle: 3,
+    }])
+  },
+}
+
+const themedHl = {
+  codeToThemedTokens(code: string) {
+    return code.split('\n').map(line => [{
+      content: line,
+      color: '#ff0000',
+    }])
+  },
+  getTheme(theme: string) {
+    return { bg: theme === 'dark' ? '#000000' : '#ffffff' }
+  },
+}
+
+const maliciousColorHl = {
+  codeToThemedTokens(code: string) {
+    return code.split('\n').map(line => [{
+      content: line,
+      color: '#ff0000;}body{display:none',
+      fontStyle: 0,
+    }])
+  },
+}
+
 describe('updateCodeTokensIncremental', () => {
   let container: HTMLElement
 
   beforeEach(() => {
     container = document.createElement('div')
+    document.head.innerHTML = ''
     document.body.innerHTML = ''
     document.body.appendChild(container)
   })
@@ -33,6 +72,656 @@ describe('updateCodeTokensIncremental', () => {
     expect(container.querySelectorAll('code .line').length).toBe(1)
   })
 
+  it('falls back to full render for existing untracked DOM', () => {
+    container.innerHTML = [
+      '<pre class="old-pre">',
+      '<code class="old-code">',
+      '<span class="old-line"><span>a</span></span>',
+      '</code>',
+      '</pre>',
+    ].join('')
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      preClass: 'new-pre',
+      codeClass: 'new-code',
+      lineClass: 'new-line',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.className).toBe('new-pre')
+    expect(container.querySelector('code')?.className).toBe('new-code')
+    expect(container.querySelectorAll('code .old-line')).toHaveLength(0)
+    expect(container.querySelectorAll('code .new-line')).toHaveLength(2)
+    expect(container.querySelector('code')?.textContent).toBe('a\nb')
+  })
+
+  it('falls back to full render when previously tracked DOM was externally mutated', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const codeEl = container.querySelector('code')!
+    codeEl.textContent = 'external stale text'
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'b', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code')?.textContent).toBe('b')
+    expect(container.querySelectorAll('code .line')).toHaveLength(1)
+    expect(container.querySelector('code')?.textContent).not.toContain('external')
+  })
+
+  it('falls back to full render when tracked line structure was externally removed', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    container.querySelector('code')!.innerHTML = '<span>not-a-line</span>'
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'a\nbc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code')?.textContent).toBe('a\nbc')
+    expect(container.querySelectorAll('code .line')).toHaveLength(2)
+  })
+
+  it('falls back to full render when tracked line wrappers are replaced but text stays unchanged', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const codeEl = container.querySelector('code')!
+    codeEl.innerHTML = '<span>a</span>\n<span>b</span>'
+    expect(codeEl.textContent).toBe('a\nb')
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code')?.textContent).toBe('a\nb')
+    expect(container.querySelectorAll('code > .line')).toHaveLength(2)
+    expect(container.querySelectorAll('code > span:not(.line)')).toHaveLength(0)
+  })
+
+  it('unobserves scheduled containers after the task runs', async () => {
+    vi.resetModules()
+
+    const origGlobalIO = (globalThis as any).IntersectionObserver
+    const origWindowIO = (window as any).IntersectionObserver
+    const origRic = (window as any).requestIdleCallback
+    const observe = vi.fn()
+    const unobserve = vi.fn()
+
+    class MockIntersectionObserver {
+      observe = observe
+      unobserve = unobserve
+    }
+
+    ;(globalThis as any).IntersectionObserver = MockIntersectionObserver
+    ;(window as any).IntersectionObserver = MockIntersectionObserver
+    ;(window as any).requestIdleCallback = (cb: IdleRequestCallback) => {
+      return window.setTimeout(() => cb({ timeRemaining: () => 999, didTimeout: true }), 0)
+    }
+
+    try {
+      const { createScheduledTokenIncrementalUpdater } = await import('../packages/stream-markdown/src/utils/incremental-tokens.js')
+      const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: 0,
+      })
+
+      updater.update('scheduled')
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(observe).toHaveBeenCalledWith(container)
+      expect(unobserve).toHaveBeenCalledWith(container)
+      updater.dispose()
+    }
+    finally {
+      if (origGlobalIO === undefined)
+        delete (globalThis as any).IntersectionObserver
+      else
+        (globalThis as any).IntersectionObserver = origGlobalIO
+
+      if (origWindowIO === undefined)
+        delete (window as any).IntersectionObserver
+      else
+        (window as any).IntersectionObserver = origWindowIO
+
+      if (origRic === undefined)
+        delete (window as any).requestIdleCallback
+      else
+        (window as any).requestIdleCallback = origRic
+
+      vi.resetModules()
+    }
+  })
+
+  it('uses window.IntersectionObserver when global IntersectionObserver is absent', async () => {
+    vi.resetModules()
+
+    const origGlobalIO = (globalThis as any).IntersectionObserver
+    const origWindowIO = (window as any).IntersectionObserver
+    const origRic = (window as any).requestIdleCallback
+    const observe = vi.fn()
+
+    delete (globalThis as any).IntersectionObserver
+
+    class MockIntersectionObserver {
+      observe = observe
+      unobserve = vi.fn()
+    }
+
+    ;(window as any).IntersectionObserver = MockIntersectionObserver
+    ;(window as any).requestIdleCallback = (cb: IdleRequestCallback) => {
+      return window.setTimeout(() => cb({ timeRemaining: () => 999, didTimeout: true }), 0)
+    }
+
+    try {
+      const { createScheduledTokenIncrementalUpdater } = await import('../packages/stream-markdown/src/utils/incremental-tokens.js')
+      const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+      })
+
+      updater.update('scheduled')
+      expect(observe).toHaveBeenCalledWith(container)
+
+      updater.dispose()
+    }
+    finally {
+      if (origGlobalIO === undefined)
+        delete (globalThis as any).IntersectionObserver
+      else
+        (globalThis as any).IntersectionObserver = origGlobalIO
+
+      if (origWindowIO === undefined)
+        delete (window as any).IntersectionObserver
+      else
+        (window as any).IntersectionObserver = origWindowIO
+
+      if (origRic === undefined)
+        delete (window as any).requestIdleCallback
+      else
+        (window as any).requestIdleCallback = origRic
+
+      vi.resetModules()
+    }
+  })
+
+  it('renders token styles with classes instead of inline styles', () => {
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const token = container.querySelector('code .line span') as HTMLElement
+    expect(token.getAttribute('style')).toBeNull()
+    expect(token.className).toMatch(/^smd-token-/)
+    const style = document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent
+    expect(style).toContain(`.${token.className}`)
+    expect(style).toContain('color: #ff0000;')
+    expect(style).toContain('font-style: italic;')
+    expect(style).toContain('font-weight: 600;')
+  })
+
+  it('emits token class selectors with enough specificity to beat common host CSS', () => {
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const token = container.querySelector('code .line span') as HTMLElement
+    const style = document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent ?? ''
+
+    expect(style).toContain(`.${token.className}.${token.className}.${token.className}{`)
+  })
+
+  it('allows inline token styles in incremental rendering when requested', () => {
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+    })
+
+    const token = container.querySelector('code .line span') as HTMLElement
+    expect(token.className).toBe('')
+    expect(token.getAttribute('style')).toContain('color: #ff0000;')
+    expect(token.getAttribute('style')).toContain('font-style: italic;')
+    expect(token.getAttribute('style')).toContain('font-weight: 600;')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+  })
+
+  it('does not treat changed inline token boundaries as a signature noop', () => {
+    const unsplitTokens = [[
+      { content: 'ab', color: '#ff0000', fontStyle: 0 },
+    ]]
+    const splitTokens = [[
+      { content: 'a', color: '#ff0000', fontStyle: 0 },
+      { content: 'b', color: '#ff0000', fontStyle: 0 },
+    ]]
+
+    updateCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+      tokenLines: unsplitTokens,
+    })
+
+    expect(container.querySelectorAll('code .line > span')).toHaveLength(1)
+
+    expect(updateCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+      tokenLines: splitTokens,
+    })).toBe('incremental')
+    expect(container.querySelectorAll('code .line > span')).toHaveLength(2)
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+      tokenLines: unsplitTokens,
+    })
+
+    expect(result).toBe('incremental')
+    expect(container.querySelectorAll('code .line > span')).toHaveLength(1)
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+  })
+
+  it('normalizes CR-only token differences when comparing trusted line signatures', () => {
+    const opts = {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline' as const,
+      compareMode: 'signature' as const,
+    }
+
+    expect(updateCodeTokensIncremental(container, hl as any, 'a\rb', {
+      ...opts,
+      tokenLines: [[{ content: 'a\rb', color: '#ff0000', fontStyle: 0 }]],
+    })).toBe('full')
+
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+
+    expect(updateCodeTokensIncremental(container, hl as any, 'ab', {
+      ...opts,
+      tokenLines: [[{ content: 'ab', color: '#ff0000', fontStyle: 0 }]],
+    })).toBe('noop')
+
+    expect(updateCodeTokensIncremental(container, hl as any, 'a\rb', {
+      ...opts,
+      tokenLines: [[{ content: 'a\rb', color: '#ff0000', fontStyle: 0 }]],
+    })).toBe('noop')
+
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+  })
+
+  it('forces a full render when incremental tokenStyleMode changes', () => {
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect((container.querySelector('code .line span') as HTMLElement).className).toMatch(/^smd-token-/)
+
+    const result = updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+    })
+
+    expect(result).toBe('full')
+    const token = container.querySelector('code .line span') as HTMLElement
+    expect(token.className).toBe('')
+    expect(token.getAttribute('style')).toContain('color: #ff0000;')
+  })
+
+  it('generates deterministic token class names independent of allocation order', async () => {
+    vi.resetModules()
+    const first = await import('../packages/stream-markdown/src/utils/token-style.js')
+    const redFirst = first.getTokenClassName('#ff0000', 0)
+    const blueFirst = first.getTokenClassName('#0000ff', 0)
+
+    vi.resetModules()
+    const second = await import('../packages/stream-markdown/src/utils/token-style.js')
+    const blueSecond = second.getTokenClassName('#0000ff', 0)
+    const redSecond = second.getTokenClassName('#ff0000', 0)
+
+    expect(redSecond).toBe(redFirst)
+    expect(blueSecond).toBe(blueFirst)
+    expect(redFirst).not.toBe(blueFirst)
+  })
+
+  it('keeps generating token classes beyond the previous rule cap', async () => {
+    vi.resetModules()
+    const {
+      applyTokenStyleToElement,
+      getTokenStyleAttr,
+    } = await import('../packages/stream-markdown/src/utils/token-style.js')
+
+    expect(getTokenStyleAttr('#000000', 0, 'class')).toMatch(/^ class="smd-token-/)
+
+    for (let i = 1; i < 2048; i++)
+      expect(getTokenStyleAttr(`#${i.toString(16).padStart(6, '0')}`, 0, 'class')).toMatch(/^ class="smd-token-/)
+
+    expect(getTokenStyleAttr('#000800', 0, 'class')).toMatch(/^ class="smd-token-/)
+
+    const el = document.createElement('span')
+    applyTokenStyleToElement(el, '#000801', 0, 'class')
+    expect(el.className).toMatch(/^smd-token-/)
+    expect(el.getAttribute('style')).toBeNull()
+  })
+
+  it('does not overwrite an existing token style element from another bundle instance', () => {
+    const foreignStyle = document.createElement('style')
+    foreignStyle.dataset.streamMarkdownTokenStyles = ''
+    foreignStyle.textContent = '.foreign-token{color: blue;}'
+    document.head.appendChild(foreignStyle)
+
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const styleEls = Array.from(
+      document.head.querySelectorAll('style[data-stream-markdown-token-styles]'),
+    )
+    const ownStyle = styleEls.find(el => el !== foreignStyle)
+
+    expect(styleEls).toHaveLength(2)
+    expect(foreignStyle.textContent).toBe('.foreign-token{color: blue;}')
+    expect(ownStyle?.textContent).toContain('color: #ff0000;')
+  })
+
+  it('rehydrates token style rules when cached HTML is reused', () => {
+    const opts = {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      htmlCache: true,
+      styleRoot: document,
+      tokenStyleMode: 'class' as const,
+    }
+
+    const html1 = renderCodeWithTokens(coloredHl as any, 'const a = 1', opts)
+
+    expect(html1).toContain('class="smd-token-')
+    expect(html1).not.toContain('style="color: #ff0000;')
+
+    let styleEl = document.head.querySelector('style[data-stream-markdown-token-styles]')
+    expect(styleEl?.textContent).toContain('color: #ff0000;')
+
+    document.head.innerHTML = ''
+
+    const html2 = renderCodeWithTokens(coloredHl as any, 'const a = 1', opts)
+
+    expect(html2).toBe(html1)
+    styleEl = document.head.querySelector('style[data-stream-markdown-token-styles]')
+    expect(styleEl?.textContent).toContain('color: #ff0000;')
+  })
+
+  it('repairs a mounted token style element whose text was externally cleared', () => {
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const styleEl = document.head.querySelector('style[data-stream-markdown-token-styles]') as HTMLStyleElement
+    expect(styleEl.textContent).toContain('color: #ff0000;')
+
+    styleEl.textContent = ''
+
+    updateCodeTokensIncremental(container, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(styleEl.textContent).toContain('color: #ff0000;')
+  })
+
+  it('uses inline token styles by default for direct string rendering', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(html).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')
+    expect(html).not.toContain('class="smd-token-')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+  })
+
+  it('uses class token styles for direct string rendering when requested', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'class',
+    })
+
+    expect(html).toContain('class="smd-token-')
+    expect(html).not.toContain('style="color: #ff0000;')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+      .toContain('color: #ff0000;')
+  })
+
+  it('uses the document style root when styleRoot is explicitly undefined', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      styleRoot: undefined,
+      tokenStyleMode: 'class',
+    })
+
+    expect(html).toContain('class="smd-token-')
+    expect(html).not.toContain('style="color: #ff0000;')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+      .toContain('color: #ff0000;')
+  })
+
+  it('falls back to inline token styles when styleRoot is explicitly null', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      styleRoot: null,
+      tokenStyleMode: 'class',
+    })
+
+    expect(html).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')
+    expect(html).not.toContain('class="smd-token-')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+  })
+
+  it('rehydrates token style rules when an updater skips identical code', () => {
+    const updater = createTokenIncrementalUpdater(container, coloredHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    updater.update('const')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+      .toContain('color: #ff0000;')
+
+    document.head.innerHTML = ''
+
+    expect(updater.update('const')).toBe('noop')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+      .toContain('color: #ff0000;')
+
+    updater.dispose()
+  })
+
+  it('does not inject arbitrary global CSS from token colors', () => {
+    updateCodeTokensIncremental(container, maliciousColorHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(document.head.textContent ?? '').not.toContain('body{display:none')
+    expect(document.head.textContent ?? '').not.toContain('}body{')
+  })
+
+  it('ignores non-string token colors from caller-provided token lines', () => {
+    const result = updateCodeTokensIncremental(container, hl as any, 'x', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+      tokenLines: [[{
+        content: 'x',
+        color: 123 as any,
+        fontStyle: 0,
+      }]],
+    })
+
+    expect(result).toBe('full')
+    const token = container.querySelector('code .line span') as HTMLElement
+    expect(token.textContent).toBe('x')
+    expect(token.getAttribute('style')).toBeNull()
+  })
+
+  it('escapes public class-name options in generated HTML', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      preClass: 'shiki"<x> data-bad="1',
+      codeClass: 'code"<x> data-bad="1',
+      lineClass: 'line"<x> data-bad="1',
+    })
+
+    expect(html).toContain('class="shiki&quot;&lt;x&gt; data-bad=&quot;1"')
+    expect(html).toContain('class="code&quot;&lt;x&gt; data-bad=&quot;1"')
+    expect(html).toContain('class="line&quot;&lt;x&gt; data-bad=&quot;1"')
+    expect(html).not.toContain('data-bad="1"')
+  })
+
+  it('keeps sanitized CSS custom-property colors', () => {
+    expect(normalizeCssColor('var(--smd-token-color, #ff0000)'))
+      .toBe('var(--smd-token-color, #ff0000)')
+    expect(normalizeCssColor('var(--smd-token-color, red !important)'))
+      .toBe('')
+    expect(normalizeCssColor('var(--smd-token-color, url(https://x.test/a))'))
+      .toBe('')
+  })
+
+  it('normalizes token colors without depending on runtime CSS.supports', () => {
+    const originalCSS = (globalThis as any).CSS
+    ;(globalThis as any).CSS = {
+      supports: () => false,
+    }
+
+    try {
+      expect(normalizeCssColor('color-mix(in srgb, red, blue)'))
+        .toBe('color-mix(in srgb, red, blue)')
+      expect(normalizeCssColor('color-mix(in srgb, #ff0000 50%, #0000ff)'))
+        .toBe('color-mix(in srgb, #ff0000 50%, #0000ff)')
+      expect(normalizeCssColor('light-dark(#fff, #000)'))
+        .toBe('light-dark(#fff, #000)')
+      expect(normalizeCssColor('color-mix(in srgb, var(--smd-token-color), #ffffff)'))
+        .toBe('color-mix(in srgb, var(--smd-token-color), #ffffff)')
+      expect(normalizeCssColor('rgb(from var(--smd-token-color) r g b / 50%)'))
+        .toBe('rgb(from var(--smd-token-color) r g b / 50%)')
+      expect(normalizeCssColor('rgb(expression(alert()))'))
+        .toBe('')
+      expect(normalizeCssColor('#ff0000;}body{display:none'))
+        .toBe('')
+      expect(normalizeCssColor('rgb(255, 0, 0)'))
+        .toBe('rgb(255, 0, 0)')
+      expect(normalizeCssColor('#123'))
+        .toBe('#123')
+      expect(normalizeCssColor('#1234'))
+        .toBe('#1234')
+      expect(normalizeCssColor('#123456'))
+        .toBe('#123456')
+      expect(normalizeCssColor('#12345678'))
+        .toBe('#12345678')
+      expect(normalizeCssColor('#12345'))
+        .toBe('')
+      expect(normalizeCssColor('#1234567'))
+        .toBe('')
+    }
+    finally {
+      if (originalCSS === undefined) {
+        delete (globalThis as any).CSS
+      }
+      else {
+        ;(globalThis as any).CSS = originalCSS
+      }
+    }
+  })
+
+  it('injects generated token styles into the container shadow root', () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const shadow = host.attachShadow({ mode: 'open' })
+    const shadowContainer = document.createElement('div')
+    shadow.appendChild(shadowContainer)
+
+    updateCodeTokensIncremental(shadowContainer, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const token = shadowContainer.querySelector('code .line span') as HTMLElement
+    expect(token.className).toMatch(/^smd-token-/)
+
+    const shadowStyle = shadow.querySelector('style[data-stream-markdown-token-styles]')?.textContent
+    expect(shadowStyle).toContain(`.${token.className}`)
+    expect(shadowStyle).toContain('color: #ff0000;')
+
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+  })
+
+  it('falls back to inline token styles when styleRoot is null inside shadow DOM', () => {
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const shadow = host.attachShadow({ mode: 'open' })
+    const shadowContainer = document.createElement('div')
+    shadow.appendChild(shadowContainer)
+
+    updateCodeTokensIncremental(shadowContainer, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      styleRoot: null,
+    })
+
+    const token = shadowContainer.querySelector('code .line span') as HTMLElement
+    expect(token.className).toBe('')
+    expect(token.getAttribute('style')).toContain('color: #ff0000;')
+
+    expect(shadow.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+  })
+
+  it('uses inline token styles for detached incremental containers by default', () => {
+    const detached = document.createElement('div')
+
+    updateCodeTokensIncremental(detached, coloredHl as any, 'const', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const token = detached.querySelector('code .line span') as HTMLElement
+
+    expect(token.className).toBe('')
+    expect(token.getAttribute('style')).toContain('color: #ff0000;')
+    expect(token.getAttribute('style')).toContain('font-style: italic;')
+    expect(token.getAttribute('style')).toContain('font-weight: 600;')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+  })
+
   it('appends a new line incrementally', () => {
     updateCodeTokensIncremental(container, hl as any, 'a', { lang: 'ts', theme: 'vitesse-dark' })
     const res2 = updateCodeTokensIncremental(container, hl as any, 'a\nb', { lang: 'ts', theme: 'vitesse-dark' })
@@ -41,6 +730,593 @@ describe('updateCodeTokensIncremental', () => {
     expect(lines.length).toBe(2)
     expect(lines[0].textContent).toBe('a')
     expect(lines[1].textContent).toBe('b')
+  })
+
+  it('falls back to full render when tracked pre gets extra children', () => {
+    updateSourceCodeTokensIncremental(container, hl as any, 'a', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const stale = document.createElement('span')
+    stale.textContent = 'stale'
+    container.querySelector('pre')!.appendChild(stale)
+
+    const result = updateSourceCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(result).toBe('full')
+
+    const pre = container.querySelector('pre')!
+    expect(pre.childNodes).toHaveLength(1)
+    expect(pre.firstElementChild?.tagName.toLowerCase()).toBe('code')
+    expect(pre.textContent).toBe('ab')
+    expect(container.querySelector('pre > span')).toBeNull()
+  })
+
+  it('falls back to full render when tracked code childNodes contain external non-render nodes', () => {
+    updateSourceCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const codeEl = container.querySelector('code')!
+    codeEl.insertBefore(document.createComment('external'), codeEl.childNodes[1] ?? null)
+    expect(codeEl.textContent).toBe('a\nb')
+
+    const result = updateSourceCodeTokensIncremental(container, hl as any, 'a\nbc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(result).toBe('full')
+    const nextCodeEl = container.querySelector('code')!
+    expect(Array.from(nextCodeEl.childNodes).some(node => node.nodeType === 8)).toBe(false)
+    expect(nextCodeEl.textContent).toBe('a\nbc')
+  })
+
+  it('repairs externally mutated pre/code shell on updater same-code calls', () => {
+    const updater = createSourceTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      preClass: 'expected-pre',
+      codeClass: 'expected-code',
+    })
+
+    updater.update('same')
+
+    const pre = container.querySelector('pre') as HTMLElement
+    const code = container.querySelector('code') as HTMLElement
+    pre.className = 'broken-pre'
+    code.className = 'broken-code'
+
+    const result = updater.update('same')
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.className).toBe('expected-pre')
+    expect(container.querySelector('code')?.className).toBe('expected-code')
+    expect(container.querySelector('code')?.textContent).toBe('same')
+
+    updater.dispose()
+  })
+
+  it('repairs externally mutated pre background style on updater same-code calls', () => {
+    const updater = createSourceTokenIncrementalUpdater(container, themedHl as any, {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    updater.update('same')
+
+    const pre = container.querySelector('pre') as HTMLElement
+    expect(pre.getAttribute('style')).toContain('#000000')
+    pre.setAttribute('style', 'background-color: #123456;')
+
+    const result = updater.update('same')
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#000000')
+    expect(container.querySelector('code')?.textContent).toBe('same')
+
+    updater.dispose()
+  })
+
+  it('keeps incremental updates when the browser normalizes the pre background style', () => {
+    updateSourceCodeTokensIncremental(container, themedHl as any, 'a', {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    const pre = container.querySelector('pre') as HTMLElement
+    pre.style.backgroundColor = '#000000'
+    expect(pre.getAttribute('style')).toBe('background-color: rgb(0, 0, 0);')
+
+    const result = updateSourceCodeTokensIncremental(container, themedHl as any, 'ab', {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    expect(result).toBe('incremental')
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+  })
+
+  it('repairs externally mutated line wrapper class on updater same-code calls', () => {
+    const updater = createSourceTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: 'line',
+    })
+
+    updater.update('same')
+
+    const line = container.querySelector('code > .line') as HTMLElement
+    line.className = 'line extra'
+
+    const result = updater.update('same')
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code > .line')?.getAttribute('class')).toBe('line')
+    expect(container.querySelector('code > .extra')).toBeNull()
+    expect(container.querySelector('code')?.textContent).toBe('same')
+
+    updater.dispose()
+  })
+
+  it('repairs externally replaced line wrapper tag on updater same-code calls', () => {
+    const updater = createSourceTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: 'line',
+    })
+
+    updater.update('same')
+
+    const oldLine = container.querySelector('code > .line') as HTMLElement
+    const replacement = document.createElement('div')
+    replacement.className = 'line'
+    replacement.innerHTML = oldLine.innerHTML
+    oldLine.replaceWith(replacement)
+
+    const result = updater.update('same')
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code > div.line')).toBeNull()
+    expect(container.querySelector('code > span.line')).not.toBeNull()
+    expect(container.querySelector('code')?.textContent).toBe('same')
+
+    updater.dispose()
+  })
+
+  it('supports an empty lineClass without duplicating stale lines', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: '',
+    })
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: '',
+    })
+
+    expect(result).toBe('incremental')
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+    expect(container.querySelectorAll('code > span')).toHaveLength(1)
+  })
+
+  it('repairs externally replaced line wrapper when lineClass is empty', () => {
+    updateSourceCodeTokensIncremental(container, hl as any, 'same', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: '',
+    })
+
+    const oldLine = container.querySelector('code > span') as HTMLElement
+    const replacement = document.createElement('div')
+    replacement.innerHTML = oldLine.innerHTML
+    oldLine.replaceWith(replacement)
+
+    const result = updateSourceCodeTokensIncremental(container, hl as any, 'same', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: '',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code > div')).toBeNull()
+    expect(container.querySelector('code > span')).not.toBeNull()
+    expect(container.querySelector('code')?.textContent).toBe('same')
+  })
+
+  it('only treats direct code children as rendered lines', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: 'line-number',
+      showLineNumbers: true,
+    })
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: 'line-number',
+      showLineNumbers: true,
+    })
+
+    expect(result).toBe('incremental')
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+
+    // The outer line is the direct child. The nested `.line-number` is only the
+    // gutter marker and must not be counted as another rendered line.
+    expect(container.querySelectorAll('code > .line-number')).toHaveLength(1)
+    expect(container.querySelectorAll('code > .line-number > .line-number')).toHaveLength(1)
+  })
+
+  it('does not let reentrant onResult leave stale append-only state', () => {
+    let reentered = false
+    const updaterRef = {} as { current: ReturnType<typeof createTokenIncrementalUpdater> }
+
+    const updater = createTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      appendOnlyFastPath: true,
+      onResult: () => {
+        if (reentered)
+          return
+
+        reentered = true
+        updaterRef.current.update('x\nb')
+      },
+    })
+    updaterRef.current = updater
+
+    updater.update('a\nb')
+
+    expect(container.querySelector('code')?.textContent).toBe('x\nb')
+
+    updater.update('a\nbc')
+
+    expect(container.querySelector('code')?.textContent).toBe('a\nbc')
+    updater.dispose()
+  })
+
+  it('keeps direct updater same-code state when onResult throws', () => {
+    let tokenizationCount = 0
+    const countedHl = {
+      codeToThemedTokens(code: string) {
+        tokenizationCount++
+        return code.split('\n').map(line => [{
+          content: line,
+          color: '#ff0000',
+          fontStyle: 0,
+        }])
+      },
+    }
+
+    const updater = createTokenIncrementalUpdater(container, countedHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      onResult: () => {
+        throw new Error('consumer failed')
+      },
+    })
+
+    expect(() => updater.update('same')).toThrow('consumer failed')
+    expect(container.querySelector('code')?.textContent).toBe('same')
+    expect(tokenizationCount).toBe(1)
+
+    expect(() => updater.update('same')).toThrow('consumer failed')
+    expect(tokenizationCount).toBe(1)
+
+    updater.dispose()
+  })
+
+  it('does not skip retokenization after same-code explicit token lines', () => {
+    let tokenizationCount = 0
+    const countedHl = {
+      codeToThemedTokens(code: string) {
+        tokenizationCount++
+        return code.split('\n').map(line => [{
+          content: line,
+          color: '#0000ff',
+          fontStyle: 0,
+        }])
+      },
+    }
+
+    const updater = createSourceTokenIncrementalUpdater(container, countedHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+    })
+
+    updater.update('same', [[{
+      content: 'same',
+      color: '#ff0000',
+      fontStyle: 0,
+    }]])
+
+    expect(tokenizationCount).toBe(0)
+    expect((container.querySelector('code .line span') as HTMLElement).getAttribute('style')).toContain('color: #ff0000;')
+
+    updater.update('same')
+
+    expect(tokenizationCount).toBe(1)
+    expect((container.querySelector('code .line span') as HTMLElement).getAttribute('style')).toContain('color: #0000ff;')
+
+    updater.dispose()
+  })
+
+  it('keeps skip-same fast path state after reentrant updater updates', () => {
+    let tokenizationCount = 0
+    const countedHl = {
+      codeToThemedTokens(code: string) {
+        tokenizationCount++
+        return code.split('\n').map(line => [{
+          content: line,
+          color: '#ff0000',
+          fontStyle: 0,
+        }])
+      },
+    }
+
+    let reentered = false
+    const updaterRef = {} as { current: ReturnType<typeof createTokenIncrementalUpdater> }
+
+    const updater = createTokenIncrementalUpdater(container, countedHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      onResult: () => {
+        if (reentered)
+          return
+
+        reentered = true
+        updaterRef.current.update('inner')
+      },
+    })
+    updaterRef.current = updater
+
+    updater.update('outer')
+    expect(container.querySelector('code')?.textContent).toBe('inner')
+    expect(tokenizationCount).toBe(2)
+
+    expect(updater.update('inner')).toBe('noop')
+    expect(tokenizationCount).toBe(2)
+
+    updater.dispose()
+  })
+
+  it('does not skip same-code updater calls after signed token DOM is externally mutated', () => {
+    const updater = createTokenIncrementalUpdater(container, coloredHl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    updater.update('con')
+    updater.update('const')
+
+    const token = container.querySelector('code .line span') as HTMLElement
+    expect(token.className).toMatch(/^smd-token-/)
+
+    token.removeAttribute('class')
+
+    expect(updater.update('const')).toBe('incremental')
+    expect((container.querySelector('code .line span') as HTMLElement).className)
+      .toMatch(/^smd-token-/)
+
+    updater.dispose()
+  })
+
+  it('removes stale trailing lines when code shrinks with matching prefix lines', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a\nb\nc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const res2 = updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(res2).toBe('full')
+
+    const lines = container.querySelectorAll('code .line')
+    expect(lines.length).toBe(2)
+    expect(lines[0].textContent).toBe('a')
+    expect(lines[1].textContent).toBe('b')
+  })
+
+  it('removes stale trailing lines from explicit token lines when code shrinks', () => {
+    updateCodeTokensIncremental(container, hl as any, 'a\nb\nc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenLines: [
+        [{ content: 'a' }],
+        [{ content: 'b' }],
+        [{ content: 'c' }],
+      ],
+    })
+
+    const result = updateCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenLines: [
+        [{ content: 'a' }],
+        [{ content: 'b' }],
+        [{ content: 'stale' }],
+      ],
+    })
+
+    expect(result).toBe('full')
+
+    const lines = container.querySelectorAll('code .line')
+    expect(lines).toHaveLength(2)
+    expect(container.querySelector('code')?.textContent).toBe('a\nb')
+    expect(container.querySelector('code')?.textContent).not.toContain('stale')
+  })
+
+  it('forces a full render when render options change', () => {
+    updateCodeTokensIncremental(container, themedHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#000000')
+
+    const result = updateCodeTokensIncremental(container, themedHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'light',
+      preClass: 'next-pre',
+      codeClass: 'next-code',
+      lineClass: 'next-line',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#ffffff')
+    expect(container.querySelector('pre')?.className).toBe('next-pre')
+    expect(container.querySelector('code')?.className).toBe('next-code')
+    expect(container.querySelectorAll('code .next-line')).toHaveLength(1)
+  })
+
+  it('does not collide render signatures when public options contain the separator', () => {
+    updateSourceCodeTokensIncremental(container, hl as any, 'same', {
+      lang: 'a',
+      theme: 'b\u0001c',
+      preClass: 'pre',
+      codeClass: '',
+      lineClass: 'line',
+    })
+
+    const result = updateSourceCodeTokensIncremental(container, hl as any, 'same', {
+      lang: 'a\u0001b',
+      theme: 'c',
+      preClass: 'pre',
+      codeClass: '',
+      lineClass: 'line',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code')?.textContent).toBe('same')
+  })
+
+  it('forces a full render when the same theme name resolves to a different background', () => {
+    let bg = '#000000'
+    const dynamicBgHl = {
+      codeToThemedTokens(code: string) {
+        return code.split('\n').map(line => [{
+          content: line,
+          color: '#ff0000',
+        }])
+      },
+      getTheme() {
+        return { bg }
+      },
+    }
+
+    updateCodeTokensIncremental(container, dynamicBgHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'dynamic',
+    })
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#000000')
+
+    bg = '#ffffff'
+    const result = updateCodeTokensIncremental(container, dynamicBgHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'dynamic',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#ffffff')
+  })
+
+  it('forces a full render when the pre background style was externally changed', () => {
+    updateSourceCodeTokensIncremental(container, themedHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    const pre = container.querySelector('pre') as HTMLElement
+    expect(pre.getAttribute('style')).toContain('#000000')
+    pre.setAttribute('style', 'background-color: #123456;')
+
+    const result = updateSourceCodeTokensIncremental(container, themedHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#000000')
+  })
+
+  it('does not skip identical code when the same theme name resolves to a different background', () => {
+    let bg = '#000000'
+    const dynamicBgHl = {
+      codeToThemedTokens(code: string) {
+        return code.split('\n').map(line => [{
+          content: line,
+          color: '#ff0000',
+        }])
+      },
+      getTheme() {
+        return { bg }
+      },
+    }
+    const updater = createTokenIncrementalUpdater(container, dynamicBgHl as any, {
+      lang: 'ts',
+      theme: 'dynamic',
+    })
+
+    updater.update('const a = 1')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#000000')
+
+    bg = '#ffffff'
+    expect(updater.update('const a = 1')).toBe('full')
+    expect(container.querySelector('pre')?.getAttribute('style')).toContain('#ffffff')
+
+    updater.dispose()
+  })
+
+  it('does not falsely diverge in innerHTML mode after merged token DOM is created', () => {
+    const splitSameStyleHl = {
+      codeToThemedTokens(code: string) {
+        return code.split('\n').map(line => [
+          { content: line.slice(0, 1), color: '#ff0000', fontStyle: 0 },
+          { content: line.slice(1), color: '#ff0000', fontStyle: 0 },
+        ])
+      },
+    }
+
+    updateCodeTokensIncremental(container, splitSameStyleHl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      compareMode: 'innerHTML',
+    })
+
+    expect(updateCodeTokensIncremental(container, splitSameStyleHl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      compareMode: 'innerHTML',
+    })).toBe('noop')
+
+    updateCodeTokensIncremental(container, splitSameStyleHl as any, 'abc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      compareMode: 'innerHTML',
+    })
+
+    const before = container.querySelector('code .line')!.innerHTML
+
+    const res = updateCodeTokensIncremental(container, splitSameStyleHl as any, 'abc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      compareMode: 'innerHTML',
+    })
+
+    expect(res).toBe('noop')
+    expect(container.querySelector('code .line')!.innerHTML).toBe(before)
   })
 
   it('updates last line incrementally', () => {

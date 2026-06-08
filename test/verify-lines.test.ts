@@ -1,6 +1,6 @@
-import { updateCodeTokensIncremental } from 'stream-markdown'
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest'
+import { updateCodeTokensIncremental } from '../packages/stream-markdown/src/utils/incremental-tokens.js'
 import { streamContent as tsMarkdown } from '../src/pages/markdown.js'
 import { verifyCodeLinesStructure } from './verify-lines.js'
 

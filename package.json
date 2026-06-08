@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "perf:run": "node scripts/perf-runner.mjs",
     "test": "vitest",
+    "test:ci": "pnpm --filter stream-markdown run build && vitest --run",
     "bump": "bumpp packages/stream-markdown/package.json --commit --push --tag && pnpm --filter stream-markdown publish --access public --no-git-checks"
   },
   "dependencies": {

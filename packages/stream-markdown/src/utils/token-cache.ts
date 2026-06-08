@@ -1,5 +1,6 @@
 import type { Highlighter } from 'shiki'
 import type { ThemedToken } from './shiki-render.js'
+import { getHighlighterRevision } from './highlighter-revision.js'
 
 export interface TokenCacheOptions {
   tokenCache?: boolean
@@ -49,7 +50,13 @@ export function getTokenLines(
     return getTokens()
 
   const cache = getCache(highlighter)
-  const key = `${lang}\u0001${theme}\u0001${code}`
+  const key = JSON.stringify([
+    'stream-markdown-token-v2',
+    getHighlighterRevision(highlighter),
+    lang,
+    theme,
+    code,
+  ])
   const cached = cache.get(key)
   if (cached) {
     cache.delete(key)

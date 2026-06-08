@@ -8,6 +8,10 @@ export interface HtmlCacheOptions {
 const DEFAULT_HTML_CACHE_SIZE = 30
 const perHighlighterCache = new WeakMap<Highlighter, Map<string, string>>()
 
+export function clearHtmlCache(highlighter: Highlighter) {
+  perHighlighterCache.delete(highlighter)
+}
+
 function getCache(highlighter: Highlighter) {
   let cache = perHighlighterCache.get(highlighter)
   if (!cache) {

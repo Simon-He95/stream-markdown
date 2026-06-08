@@ -1,6 +1,9 @@
 import type { Highlighter } from 'shiki'
+import type { TokenStyleMode, TokenStyleModeOption } from './token-style.js'
+import { getHighlighterRevision } from './highlighter-revision.js'
 import { getCachedHtml, setCachedHtml } from './html-cache.js'
 import { getTokenLines } from './token-cache.js'
+import { ensureTokenStyleSheet, getTokenStyleAttr, normalizeCssColor, resolveTokenStyleMode } from './token-style.js'
 
 export interface RenderOptions {
   lang: string
@@ -15,6 +18,8 @@ export interface RenderOptions {
   htmlCache?: boolean
   htmlCacheMaxEntries?: number
   tokenLines?: ThemedToken[][]
+  styleRoot?: Node | null
+  tokenStyleMode?: TokenStyleModeOption
 }
 
 export interface ThemedToken {
@@ -32,6 +37,22 @@ function countLines(code: string): number {
   return count
 }
 
+function normalizeTokenLinesForCode(
+  tokenLines: ThemedToken[][],
+  code: string,
+  cloneLines = false,
+): ThemedToken[][] {
+  const expected = countLines(code)
+  let lines = cloneLines ? tokenLines.map(line => line.slice()) : tokenLines
+
+  if (lines.length > expected)
+    lines = lines.slice(0, expected)
+  if (lines.length < expected)
+    lines = lines.concat(Array.from({ length: expected - lines.length }, () => []))
+
+  return lines
+}
+
 function escapeHtml(str: string): string {
   return str.replace(/\r/g, '')
     .replace(/&/g, '&amp;')
@@ -39,29 +60,24 @@ function escapeHtml(str: string): string {
     .replace(/>/g, '&gt;')
 }
 
-function fontStyleToCss(style?: number): string {
-  if (!style || style === 0)
-    return ''
-  const parts: string[] = []
-  if (style & 1)
-    parts.push('font-style: italic;')
-  if (style & 2)
-    parts.push('font-weight: 600;')
-  if (style & 4)
-    parts.push('text-decoration: underline; text-underline-offset: 0.15em;')
-  return parts.join(' ')
+function escapeAttr(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
-const STYLE_CACHE = new Map<string, string>()
-function tokenStyle(color?: string, fontStyle?: number): string {
-  const key = `${color ?? ''}|${fontStyle ?? 0}`
-  const cached = STYLE_CACHE.get(key)
-  if (cached !== undefined)
-    return cached
-  const colorCss = color ? `color: ${color};` : ''
-  const style = `${colorCss}${fontStyleToCss(fontStyle)}`
-  STYLE_CACHE.set(key, style)
-  return style
+function normalizeStartingLineNumber(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value))
+    return 1
+  return Math.trunc(value)
+}
+
+function getRenderStyleRoot(opts: RenderOptions): Node | null | undefined {
+  if (opts.styleRoot !== undefined)
+    return opts.styleRoot
+  return typeof document !== 'undefined' ? document : undefined
 }
 
 export function renderCodeWithTokens(
@@ -69,30 +85,10 @@ export function renderCodeWithTokens(
   code: string,
   opts: RenderOptions,
 ): string {
-  const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber = 1 } = opts
-  const cacheKey = `${lang}\u0001${theme}\u0001${preClass}\u0001${codeClass}\u0001${lineClass}\u0001${showLineNumbers ? 1 : 0}\u0001${startingLineNumber}\u0001${code}`
-  const cachedHtml = getCachedHtml(highlighter, cacheKey, {
-    htmlCache: opts.htmlCache,
-    htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
-  })
-  if (cachedHtml)
-    return cachedHtml
-
-  let lines: ThemedToken[][]
-  lines = opts.tokenLines
-    ? opts.tokenLines.map(line => line.slice())
-    : getTokenLines(highlighter, code, lang, theme, {
-        tokenCache: opts.tokenCache,
-        tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
-      })
-
-  {
-    const expected = countLines(code)
-    if (lines.length < expected) {
-      lines = lines.concat(Array.from({ length: expected - lines.length }, () => []))
-    }
-  }
-
+  const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber: rawStartingLineNumber = 1 } = opts
+  const startingLineNumber = normalizeStartingLineNumber(rawStartingLineNumber)
+  const styleRoot = getRenderStyleRoot(opts)
+  const tokenStyleMode: TokenStyleMode = resolveTokenStyleMode(opts.tokenStyleMode, styleRoot, 'inline')
   let bg: string | undefined
   try {
     const themeObj = (highlighter as any).getTheme?.(theme)
@@ -101,25 +97,88 @@ export function renderCodeWithTokens(
   catch {
     // ignore
   }
+  const safeBg = normalizeCssColor(bg)
+  const cacheKey = JSON.stringify([
+    'stream-markdown-html-v3',
+    getHighlighterRevision(highlighter),
+    tokenStyleMode,
+    safeBg,
+    lang,
+    theme,
+    preClass,
+    codeClass,
+    lineClass,
+    showLineNumbers,
+    startingLineNumber,
+    code,
+  ])
+  const canUseHtmlCache = opts.tokenLines == null
+  if (canUseHtmlCache) {
+    const cachedHtml = getCachedHtml(highlighter, cacheKey, {
+      htmlCache: opts.htmlCache,
+      htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
+    })
+    if (cachedHtml) {
+      if (tokenStyleMode === 'class')
+        ensureTokenStyleSheet(styleRoot)
+      return cachedHtml
+    }
+  }
+
+  const lines = opts.tokenLines
+    ? normalizeTokenLinesForCode(opts.tokenLines, code, true)
+    : normalizeTokenLinesForCode(getTokenLines(highlighter, code, lang, theme, {
+        tokenCache: opts.tokenCache,
+        tokenCacheMaxEntries: opts.tokenCacheMaxEntries,
+      }), code)
 
   let lineNumber = startingLineNumber
   const lineHtml = lines.map((line) => {
-    const tokensHtml = line.map((t) => {
-      const style = tokenStyle(t.color, t.fontStyle)
-      const styleAttr = style ? ` style="${style}"` : ''
-      return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
-    }).join('')
+    const tokensHtml = tokenStyleMode === 'class'
+      ? (() => {
+          let html = ''
+          let i = 0
+
+          while (i < line.length) {
+            const t = line[i]
+            const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, tokenStyleMode)
+            let content = t.content
+            i++
+
+            while (i < line.length) {
+              const t2 = line[i]
+              const styleAttr2 = getTokenStyleAttr(t2.color, t2.fontStyle, tokenStyleMode)
+              if (styleAttr2 !== styleAttr)
+                break
+              content += t2.content
+              i++
+            }
+
+            html += `<span${styleAttr}>${escapeHtml(content)}</span>`
+          }
+
+          return html
+        })()
+      : line.map((t) => {
+          const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, tokenStyleMode)
+          return `<span${styleAttr}>${escapeHtml(t.content)}</span>`
+        }).join('')
 
     const ln = showLineNumbers ? `<span class="line-number" data-line="${lineNumber++}"></span>` : ''
-    return `<span class="${lineClass}">${ln}${tokensHtml}</span>`
+    return `<span class="${escapeAttr(lineClass)}">${ln}${tokensHtml}</span>`
   }).join('\n')
 
-  const preStyle = bg ? ` style="background-color: ${bg};"` : ''
-  const codeCls = codeClass ? ` class="${codeClass}"` : ''
-  const html = `<pre class="${preClass}"${preStyle}><code${codeCls}>${lineHtml}</code></pre>`
-  setCachedHtml(highlighter, cacheKey, html, {
-    htmlCache: opts.htmlCache,
-    htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
-  })
+  const preStyle = safeBg ? ` style="background-color: ${escapeAttr(safeBg)};"` : ''
+  const safePreClass = escapeAttr(preClass)
+  const codeCls = codeClass ? ` class="${escapeAttr(codeClass)}"` : ''
+  const html = `<pre class="${safePreClass}"${preStyle}><code${codeCls}>${lineHtml}</code></pre>`
+  if (tokenStyleMode === 'class')
+    ensureTokenStyleSheet(styleRoot)
+  if (canUseHtmlCache) {
+    setCachedHtml(highlighter, cacheKey, html, {
+      htmlCache: opts.htmlCache,
+      htmlCacheMaxEntries: opts.htmlCacheMaxEntries,
+    })
+  }
   return html
 }
