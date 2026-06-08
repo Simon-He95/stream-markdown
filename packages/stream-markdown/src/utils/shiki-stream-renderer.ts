@@ -20,8 +20,6 @@ export interface ShikiStreamRendererOptions {
   // optional per-renderer suggestion for scheduler time budget (ms). If set,
   // this will call setTimeBudget() which affects the shared scheduler.
   timeBudget?: number
-  // pass-through controls for the scheduled token updater
-  appendOnlyFastPath?: boolean
   throttleMs?: number
   compareMode?: TokenIncrementalOptions['compareMode']
   skipSameCode?: boolean
@@ -172,7 +170,12 @@ export function createShikiStreamRenderer(
     tokenStyleMode: options.tokenStyleMode,
     compareMode: options.compareMode,
     skipSameCode: options.skipSameCode,
-    appendOnlyFastPath: options.appendOnlyFastPath,
+    // Renderer-level streaming is not append-only safe. Appending source text can
+    // change tokenization before the previous last line: multiline comments,
+    // strings, Markdown fences, heredocs, etc. Keep this unsafe optimization only
+    // on the low-level updater API where callers can guarantee earlier tokens are
+    // immutable.
+    appendOnlyFastPath: false,
     throttleMs: options.throttleMs,
     onResult: options.onResult,
   })

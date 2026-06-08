@@ -1,7 +1,7 @@
+import type { ShikiStreamTokenizer } from 'shiki-stream'
 import type { TokenIncrementalOptions, TokenIncrementalUpdater } from './incremental-tokens.js'
 import type { ThemedToken } from './shiki-render.js'
 import type { ShikiStreamRendererOptions as BaseShikiStreamRendererOptions } from './shiki-stream-renderer.js'
-import { ShikiStreamTokenizer } from 'shiki-stream'
 import { defaultLanguages, registerHighlight } from './highlight.js'
 import { getHighlighterRevision } from './highlighter-revision.js'
 import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
@@ -14,6 +14,16 @@ export interface ShikiStreamCachedRendererOptions extends Omit<BaseShikiStreamRe
    * content via shiki-stream. Set to false to always retokenize from scratch.
    */
   useGrammarState?: boolean
+}
+
+type ShikiStreamTokenizerConstructor = typeof import('shiki-stream')['ShikiStreamTokenizer']
+
+let shikiStreamTokenizerConstructorPromise: Promise<ShikiStreamTokenizerConstructor> | null = null
+
+function loadShikiStreamTokenizerConstructor(): Promise<ShikiStreamTokenizerConstructor> {
+  shikiStreamTokenizerConstructorPromise ??= import('shiki-stream')
+    .then(mod => mod.ShikiStreamTokenizer)
+  return shikiStreamTokenizerConstructorPromise
 }
 
 function tokensToLines(tokens: ThemedToken[]): ThemedToken[][] {
@@ -171,7 +181,11 @@ export function createShikiStreamCachedRenderer(
     if (disposed || !highlighter)
       return
     if (!tokenizer) {
-      tokenizer = new ShikiStreamTokenizer({
+      const Tokenizer = await loadShikiStreamTokenizerConstructor()
+      if (disposed || !highlighter)
+        return
+
+      tokenizer = new Tokenizer({
         highlighter,
         lang: currentLang ?? 'plaintext',
         theme: currentTheme,

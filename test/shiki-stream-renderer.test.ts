@@ -4,13 +4,19 @@ import { clearAll } from '../packages/stream-markdown/src/utils/render-scheduler
 import { createShikiStreamRenderer } from '../packages/stream-markdown/src/utils/shiki-stream-renderer.js'
 
 const highlightMock = vi.hoisted(() => {
+  interface MockToken { content: string, color?: string, fontStyle?: number }
+  type Tokenize = (code: string) => MockToken[][]
+
+  const defaultTokenize: Tokenize = code => code.split('\n').map(line => [{ content: line }])
+  let tokenize: Tokenize = defaultTokenize
+
   const loadedThemes = new Set<string>(['vitesse-dark'])
   const loadTheme = vi.fn(async (theme: string) => {
     loadedThemes.add(theme)
   })
   const highlighter = {
     codeToThemedTokens(code: string) {
-      return code.split('\n').map(line => [{ content: line }])
+      return tokenize(code)
     },
     getTheme: vi.fn((theme: string) => {
       return loadedThemes.has(theme) ? { bg: '#000000' } : undefined
@@ -25,7 +31,14 @@ const highlightMock = vi.hoisted(() => {
     return highlighter
   })
 
-  return { highlighter, loadedThemes, loadTheme, registerHighlight }
+  return {
+    highlighter,
+    loadedThemes,
+    loadTheme,
+    registerHighlight,
+    setTokenize: (fn: Tokenize) => { tokenize = fn },
+    resetTokenize: () => { tokenize = defaultTokenize },
+  }
 })
 
 vi.mock('../packages/stream-markdown/src/utils/highlight.js', () => ({
@@ -57,6 +70,7 @@ describe('createShikiStreamRenderer', () => {
     highlightMock.loadTheme.mockClear()
     highlightMock.highlighter.getTheme.mockClear()
     highlightMock.registerHighlight.mockClear()
+    highlightMock.resetTokenize()
 
     origGlobalRaf = (globalThis as any).requestAnimationFrame
     origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame
@@ -227,6 +241,73 @@ describe('createShikiStreamRenderer', () => {
     expect(container.querySelector('code')?.className).toBe('custom-code')
     expect(container.querySelectorAll('code .custom-line')).toHaveLength(1)
     expect(container.querySelector('code .custom-line .line-number')?.getAttribute('data-line')).toBe('10')
+
+    renderer.dispose()
+  })
+
+  it('does not enable append-only fast path at stream renderer level', async () => {
+    const rafCallbacks: FrameRequestCallback[] = []
+    const idleCallbacks: IdleRequestCallback[] = []
+
+    const requestAnimationFrameMock = (cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb)
+      return rafCallbacks.length
+    }
+    const requestIdleCallbackMock = (cb: IdleRequestCallback) => {
+      idleCallbacks.push(cb)
+      return idleCallbacks.length
+    }
+
+    ;(globalThis as any).requestAnimationFrame = requestAnimationFrameMock
+    ;(globalThis as any).cancelAnimationFrame = vi.fn()
+    ;(window as any).requestAnimationFrame = requestAnimationFrameMock
+    ;(window as any).cancelAnimationFrame = vi.fn()
+    ;(globalThis as any).requestIdleCallback = requestIdleCallbackMock
+    ;(window as any).requestIdleCallback = requestIdleCallbackMock
+
+    highlightMock.setTokenize((code: string) => {
+      const color = code.includes('END') ? '#ff0000' : '#0000ff'
+      return code.split('\n').map(line => [{
+        content: line,
+        color,
+        fontStyle: 0,
+      }])
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      throttleMs: 0,
+      appendOnlyFastPath: true,
+    } as any)
+
+    const flushScheduledRender = () => {
+      expect(rafCallbacks).toHaveLength(1)
+      rafCallbacks.shift()?.(performance.now())
+
+      expect(idleCallbacks).toHaveLength(1)
+      idleCallbacks.shift()?.({
+        didTimeout: true,
+        timeRemaining: () => 999,
+      } as IdleDeadline)
+    }
+
+    await renderer.updateCode('a\nb')
+    flushScheduledRender()
+
+    const firstLineTokenBefore = container.querySelector('code .line > span') as HTMLElement
+    const blueClassName = firstLineTokenBefore.className
+    expect(blueClassName).toMatch(/^smd-token-/)
+
+    await renderer.updateCode('a\nb\nEND')
+    flushScheduledRender()
+
+    const firstLineTokenAfter = container.querySelector('code .line > span') as HTMLElement
+    expect(firstLineTokenAfter.className).not.toBe(blueClassName)
+    expect(container.querySelectorAll('code .line')).toHaveLength(3)
 
     renderer.dispose()
   })
