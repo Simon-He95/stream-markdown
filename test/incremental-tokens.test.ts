@@ -503,6 +503,24 @@ describe('updateCodeTokensIncremental', () => {
     expect(document.head.textContent ?? '').not.toContain('}body{')
   })
 
+  it('ignores non-string token colors from caller-provided token lines', () => {
+    const result = updateCodeTokensIncremental(container, hl as any, 'x', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+      tokenLines: [[{
+        content: 'x',
+        color: 123 as any,
+        fontStyle: 0,
+      }]],
+    })
+
+    expect(result).toBe('full')
+    const token = container.querySelector('code .line span') as HTMLElement
+    expect(token.textContent).toBe('x')
+    expect(token.getAttribute('style')).toBeNull()
+  })
+
   it('escapes public class-name options in generated HTML', () => {
     const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
       lang: 'ts',

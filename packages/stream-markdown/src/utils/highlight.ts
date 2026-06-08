@@ -56,6 +56,78 @@ const loadedObjectThemes = new WeakMap<object, { generation: number, fingerprint
 const loadedObjectThemesById = new Map<string, { generation: number, fingerprint: string }>()
 let applyPromise: Promise<void> = Promise.resolve()
 let highlighterGeneration = 0
+const highlighterMutationNames = ['loadLanguage', 'loadTheme'] as const
+type HighlighterMutationName = typeof highlighterMutationNames[number]
+type HighlighterMutation = (...args: any[]) => any
+const wrappedHighlighterMutations = new WeakMap<
+  Highlighter,
+  Partial<Record<HighlighterMutationName, HighlighterMutation>>
+>()
+
+function invalidateHighlighterCaches(instance: Highlighter): void {
+  bumpHighlighterRevision(instance)
+  clearTokenCache(instance)
+  clearHtmlCache(instance)
+}
+
+function getHighlighterMutation(
+  instance: Highlighter,
+  name: HighlighterMutationName,
+): HighlighterMutation | undefined {
+  const original = wrappedHighlighterMutations.get(instance)?.[name]
+  if (original)
+    return original
+
+  const current = (instance as any)[name]
+  return typeof current === 'function' ? current : undefined
+}
+
+function hasHighlighterMutation(instance: Highlighter, name: HighlighterMutationName): boolean {
+  return !!getHighlighterMutation(instance, name)
+}
+
+async function callHighlighterMutation(
+  instance: Highlighter,
+  name: HighlighterMutationName,
+  ...args: any[]
+): Promise<void> {
+  const mutation = getHighlighterMutation(instance, name)
+  if (!mutation)
+    return
+
+  await mutation.apply(instance, args)
+}
+
+function wrapHighlighterMutationMethods(instance: Highlighter): void {
+  if (wrappedHighlighterMutations.has(instance))
+    return
+
+  const originals: Partial<Record<HighlighterMutationName, HighlighterMutation>> = {}
+  const anyHl = instance as any
+
+  for (const name of highlighterMutationNames) {
+    const original = anyHl[name]
+    if (typeof original !== 'function')
+      continue
+
+    originals[name] = original
+    anyHl[name] = (...args: any[]) => {
+      const result = original.apply(instance, args)
+
+      if (result && typeof result.then === 'function') {
+        return result.then((value: unknown) => {
+          invalidateHighlighterCaches(instance)
+          return value
+        })
+      }
+
+      invalidateHighlighterCaches(instance)
+      return result
+    }
+  }
+
+  wrappedHighlighterMutations.set(instance, originals)
+}
 
 function isCurrentHighlighterInstance(instance: Highlighter, generation: number): boolean {
   return highlighterGeneration === generation && highlighter === instance
@@ -304,7 +376,6 @@ async function loadPendingIntoHighlighter(
   if (!isCurrentHighlighterInstance(targetHighlighter, generation))
     return
 
-  const anyHl = targetHighlighter as any
   const langs = Array.from(pendingLangs).filter(l => !loadedLangs.has(l))
   const themes = pendingThemes.filter(t => !isThemeLoaded(t))
   pendingLangs.clear()
@@ -315,13 +386,13 @@ async function loadPendingIntoHighlighter(
   let themeIndex = 0
 
   try {
-    if (langs.length > 0 && typeof anyHl.loadLanguage === 'function') {
+    if (langs.length > 0 && hasHighlighterMutation(targetHighlighter, 'loadLanguage')) {
       for (; langIndex < langs.length; langIndex++) {
         const l = langs[langIndex]
         if (loadedLangs.has(l))
           continue
 
-        await anyHl.loadLanguage(l)
+        await callHighlighterMutation(targetHighlighter, 'loadLanguage', l)
         if (!isCurrentHighlighterInstance(targetHighlighter, generation))
           return
 
@@ -329,13 +400,13 @@ async function loadPendingIntoHighlighter(
         didMutateHighlighter = true
       }
     }
-    if (themes.length > 0 && typeof anyHl.loadTheme === 'function') {
+    if (themes.length > 0 && hasHighlighterMutation(targetHighlighter, 'loadTheme')) {
       for (; themeIndex < themes.length; themeIndex++) {
         const t = themes[themeIndex]
         if (isThemeLoaded(t))
           continue
 
-        await anyHl.loadTheme(t)
+        await callHighlighterMutation(targetHighlighter, 'loadTheme', t)
         if (!isCurrentHighlighterInstance(targetHighlighter, generation))
           return
 
@@ -358,9 +429,7 @@ async function loadPendingIntoHighlighter(
   }
   finally {
     if (didMutateHighlighter && isCurrentHighlighterInstance(targetHighlighter, generation)) {
-      bumpHighlighterRevision(targetHighlighter)
-      clearTokenCache(targetHighlighter)
-      clearHtmlCache(targetHighlighter)
+      invalidateHighlighterCaches(targetHighlighter)
     }
   }
 }
@@ -419,6 +488,7 @@ export async function registerHighlight(options: {
         return h
       }
 
+      wrapHighlighterMutationMethods(h)
       markInitialLoaded(initialLangs, initialThemes)
       for (const lang of initialLangs)
         pendingLangs.delete(lang)

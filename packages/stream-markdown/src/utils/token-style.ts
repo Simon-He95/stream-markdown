@@ -132,8 +132,11 @@ function isSafeCssColorForSsr(value: string): boolean {
     || isSafeTopLevelCssFunction(value)
 }
 
-export function normalizeCssColor(color?: string): string {
-  const value = color?.trim()
+export function normalizeCssColor(color?: unknown): string {
+  if (typeof color !== 'string')
+    return ''
+
+  const value = color.trim()
   if (!value || !isSafeCssColorSyntax(value))
     return ''
 
