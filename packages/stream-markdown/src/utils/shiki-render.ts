@@ -74,6 +74,12 @@ function normalizeStartingLineNumber(value: unknown): number {
   return Math.trunc(value)
 }
 
+function getRenderStyleRoot(opts: RenderOptions): Node | null | undefined {
+  if (opts.styleRoot !== undefined)
+    return opts.styleRoot
+  return typeof document !== 'undefined' ? document : undefined
+}
+
 export function renderCodeWithTokens(
   highlighter: Highlighter,
   code: string,
@@ -81,9 +87,9 @@ export function renderCodeWithTokens(
 ): string {
   const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber: rawStartingLineNumber = 1 } = opts
   const startingLineNumber = normalizeStartingLineNumber(rawStartingLineNumber)
-  const hasConcreteStyleRoot = opts.styleRoot !== undefined && opts.styleRoot !== null
-  const requestedTokenStyleMode: TokenStyleMode = opts.tokenStyleMode ?? (hasConcreteStyleRoot ? 'class' : 'inline')
-  const tokenStyleMode: TokenStyleMode = requestedTokenStyleMode === 'class' && canUseTokenStyleClasses(opts.styleRoot)
+  const styleRoot = getRenderStyleRoot(opts)
+  const requestedTokenStyleMode: TokenStyleMode = opts.tokenStyleMode ?? 'class'
+  const tokenStyleMode: TokenStyleMode = requestedTokenStyleMode === 'class' && canUseTokenStyleClasses(styleRoot)
     ? 'class'
     : 'inline'
   let bg: string | undefined
@@ -117,7 +123,7 @@ export function renderCodeWithTokens(
     })
     if (cachedHtml) {
       if (tokenStyleMode === 'class')
-        ensureTokenStyleSheet(opts.styleRoot)
+        ensureTokenStyleSheet(styleRoot)
       return cachedHtml
     }
   }
@@ -170,7 +176,7 @@ export function renderCodeWithTokens(
   const codeCls = codeClass ? ` class="${escapeAttr(codeClass)}"` : ''
   const html = `<pre class="${safePreClass}"${preStyle}><code${codeCls}>${lineHtml}</code></pre>`
   if (tokenStyleMode === 'class')
-    ensureTokenStyleSheet(opts.styleRoot)
+    ensureTokenStyleSheet(styleRoot)
   if (canUseHtmlCache) {
     setCachedHtml(highlighter, cacheKey, html, {
       htmlCache: opts.htmlCache,

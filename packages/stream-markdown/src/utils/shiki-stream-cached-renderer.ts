@@ -114,6 +114,7 @@ export function createShikiStreamCachedRenderer(
   let tokenizer: ShikiStreamTokenizer | null = null
   let tokenBuffer: ThemedToken[] = []
   let tokenBufferRevision = -1
+  let tokenizerRevision = -1
   let updater: TokenIncrementalUpdater | null = null
   const useRaf = options.scheduleInRaf ?? true
   let scheduled = false
@@ -175,22 +176,34 @@ export function createShikiStreamCachedRenderer(
       highlighter = nextHighlighter
   }
 
+  const getCurrentHighlighterRevision = () => {
+    return highlighter ? getHighlighterRevision(highlighter) : -1
+  }
+
   const ensureTokenizer = async () => {
     if (!highlighter)
       await ensureHighlighter(currentLang)
     if (disposed || !highlighter)
       return
-    if (!tokenizer) {
-      const Tokenizer = await loadShikiStreamTokenizerConstructor()
-      if (disposed || !highlighter)
-        return
 
-      tokenizer = new Tokenizer({
-        highlighter,
-        lang: currentLang ?? 'plaintext',
-        theme: currentTheme,
-      })
-    }
+    const revision = getCurrentHighlighterRevision()
+    if (tokenizer && tokenizerRevision === revision)
+      return
+
+    tokenizer?.clear()
+    tokenizer = null
+    tokenizerRevision = -1
+
+    const Tokenizer = await loadShikiStreamTokenizerConstructor()
+    if (disposed || !highlighter)
+      return
+
+    tokenizer = new Tokenizer({
+      highlighter,
+      lang: currentLang ?? 'plaintext',
+      theme: currentTheme,
+    })
+    tokenizerRevision = getCurrentHighlighterRevision()
   }
 
   const enqueue = <T>(task: () => Promise<T>) => {
@@ -199,13 +212,15 @@ export function createShikiStreamCachedRenderer(
     return next
   }
 
-  const getCurrentHighlighterRevision = () => {
-    return highlighter ? getHighlighterRevision(highlighter) : -1
-  }
-
   const clearTokenBuffer = () => {
     tokenBuffer = []
     tokenBufferRevision = getCurrentHighlighterRevision()
+  }
+
+  const resetTokenizer = () => {
+    tokenizer?.clear()
+    tokenizer = null
+    tokenizerRevision = -1
   }
 
   const cancelPendingRender = () => {
@@ -355,7 +370,7 @@ export function createShikiStreamCachedRenderer(
       await ensureThemeLoaded(currentTheme, nextLang)
       if (disposed)
         return
-      tokenizer = null
+      resetTokenizer()
       clearTokenBuffer()
       reinitUpdater()
     }
@@ -402,8 +417,7 @@ export function createShikiStreamCachedRenderer(
     if (disposed)
       return
     currentTheme = theme
-    tokenizer?.clear()
-    tokenizer = null
+    resetTokenizer()
     clearTokenBuffer()
     reinitUpdater()
 
@@ -431,8 +445,7 @@ export function createShikiStreamCachedRenderer(
     cancelPendingRender()
     updater?.dispose()
     updater = null
-    tokenizer?.clear()
-    tokenizer = null
+    resetTokenizer()
     tokenBuffer = []
     tokenBufferRevision = -1
     if (unregisterObserver) {

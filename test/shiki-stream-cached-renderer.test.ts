@@ -7,6 +7,7 @@ import { createShikiStreamCachedRenderer } from '../packages/stream-markdown/src
 const shikiStreamMock = vi.hoisted(() => ({
   enqueueResults: [] as Array<any | ((chunk: string) => any)>,
   chunks: [] as string[],
+  instances: [] as any[],
 }))
 
 const highlightMock = vi.hoisted(() => {
@@ -42,6 +43,10 @@ const highlightMock = vi.hoisted(() => {
 
 vi.mock('shiki-stream', () => ({
   ShikiStreamTokenizer: class {
+    constructor() {
+      shikiStreamMock.instances.push(this)
+    }
+
     enqueue = vi.fn(async (chunk: string) => {
       shikiStreamMock.chunks.push(chunk)
       const next = shikiStreamMock.enqueueResults.shift()
@@ -63,6 +68,7 @@ describe('createShikiStreamCachedRenderer', () => {
   beforeEach(() => {
     shikiStreamMock.enqueueResults = []
     shikiStreamMock.chunks = []
+    shikiStreamMock.instances = []
     highlightMock.loadedThemes.clear()
     highlightMock.loadedThemes.add('vitesse-dark')
     highlightMock.state.tokenColor = undefined
@@ -256,6 +262,49 @@ describe('createShikiStreamCachedRenderer', () => {
 
     expect((container.querySelector('code .line span') as HTMLElement).getAttribute('style'))
       .toContain('color: #0000ff;')
+
+    renderer.dispose()
+  })
+
+  it('rebuilds the tokenizer after highlighter revision changes', async () => {
+    shikiStreamMock.enqueueResults.push(
+      {
+        recall: 0,
+        stable: [{ content: 'const a = 1' }],
+        unstable: [],
+      },
+      {
+        recall: 0,
+        stable: [{ content: 'const a = 12' }],
+        unstable: [],
+      },
+    )
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+    })
+
+    await renderer.updateCode('const a = 1')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(shikiStreamMock.instances).toHaveLength(1)
+    const firstTokenizer = shikiStreamMock.instances[0]
+
+    bumpHighlighterRevision(highlightMock.highlighter as any)
+
+    await renderer.updateCode('const a = 12')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(shikiStreamMock.instances).toHaveLength(2)
+    expect(firstTokenizer.clear).toHaveBeenCalled()
+    expect(shikiStreamMock.chunks).toEqual(['const a = 1', 'const a = 12'])
+    expect(container.querySelector('code')?.textContent).toBe('const a = 12')
 
     renderer.dispose()
   })

@@ -42,7 +42,6 @@ const TOKEN_STYLE_CACHE = new Map<string, string>()
 const TOKEN_STYLE_BY_CLASS = new Map<string, string>()
 const TOKEN_STYLE_RULES: string[] = []
 const TOKEN_STYLE_SELECTOR_SPECIFICITY = 3
-const MAX_TOKEN_STYLE_RULES = 2048
 let tokenStyleGeneration = 0
 let tokenStyleSheetText = ''
 let tokenStyleSheetTextGeneration = -1
@@ -199,8 +198,6 @@ function getTokenClassNameForStyle(style: string): string | undefined {
   while (true) {
     const existingStyle = TOKEN_STYLE_BY_CLASS.get(className)
     if (!existingStyle) {
-      if (TOKEN_STYLE_RULES.length >= MAX_TOKEN_STYLE_RULES)
-        return undefined
       TOKEN_CLASS_CACHE.set(style, className)
       TOKEN_STYLE_BY_CLASS.set(className, style)
       TOKEN_STYLE_RULES.push(`${tokenClassSelector(className)}{${style}}`)
@@ -243,10 +240,8 @@ export function getTokenStyleAttr(
   fontStyle?: number,
   mode: TokenStyleMode = typeof document === 'undefined' ? 'inline' : 'class',
 ): string {
-  if (mode === 'class') {
-    const classAttr = getTokenClassAttr(color, fontStyle)
-    return classAttr || getTokenInlineStyleAttr(color, fontStyle)
-  }
+  if (mode === 'class')
+    return getTokenClassAttr(color, fontStyle)
   return getTokenInlineStyleAttr(color, fontStyle)
 }
 
@@ -266,6 +261,7 @@ export function applyTokenStyleToElement(
       element.className = className
       return
     }
+    return
   }
 
   element.setAttribute('style', style)

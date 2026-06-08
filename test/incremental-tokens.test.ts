@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { createTokenIncrementalUpdater, renderCodeWithTokens, updateCodeTokensIncremental } from 'stream-markdown'
+import { createTokenIncrementalUpdater, updateCodeTokensIncremental } from 'stream-markdown'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createTokenIncrementalUpdater as createSourceTokenIncrementalUpdater,
   updateCodeTokensIncremental as updateSourceCodeTokensIncremental,
 } from '../packages/stream-markdown/src/utils/incremental-tokens.js'
+import { renderCodeWithTokens } from '../packages/stream-markdown/src/utils/shiki-render.js'
 import { normalizeCssColor } from '../packages/stream-markdown/src/utils/token-style.js'
 import { streamContent as tsMarkdown } from '../src/pages/markdown.js'
 import { markdownContent } from '../src/samples/content-markdown.js'
@@ -355,7 +356,7 @@ describe('updateCodeTokensIncremental', () => {
     expect(redFirst).not.toBe(blueFirst)
   })
 
-  it('falls back to inline token styles after the generated class rule cap', async () => {
+  it('keeps generating token classes beyond the previous rule cap', async () => {
     vi.resetModules()
     const {
       applyTokenStyleToElement,
@@ -367,13 +368,12 @@ describe('updateCodeTokensIncremental', () => {
     for (let i = 1; i < 2048; i++)
       expect(getTokenStyleAttr(`#${i.toString(16).padStart(6, '0')}`, 0, 'class')).toMatch(/^ class="smd-token-/)
 
-    const cappedStyleAttr = getTokenStyleAttr('#000800', 0, 'class')
-    expect(cappedStyleAttr).toBe(' style="color: #000800;"')
+    expect(getTokenStyleAttr('#000800', 0, 'class')).toMatch(/^ class="smd-token-/)
 
     const el = document.createElement('span')
     applyTokenStyleToElement(el, '#000801', 0, 'class')
-    expect(el.className).toBe('')
-    expect(el.getAttribute('style')).toBe('color: #000801;')
+    expect(el.className).toMatch(/^smd-token-/)
+    expect(el.getAttribute('style')).toBeNull()
   })
 
   it('does not overwrite an existing token style element from another bundle instance', () => {
@@ -441,25 +441,29 @@ describe('updateCodeTokensIncremental', () => {
     expect(styleEl.textContent).toContain('color: #ff0000;')
   })
 
-  it('keeps renderCodeWithTokens self-contained by default in a DOM environment', () => {
+  it('uses class token styles by default in a DOM environment', () => {
     const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
       lang: 'ts',
       theme: 'vitesse-dark',
     })
 
-    expect(html).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')
-    expect(html).not.toContain('class="smd-token-')
+    expect(html).toContain('class="smd-token-')
+    expect(html).not.toContain('style="color: #ff0000;')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+      .toContain('color: #ff0000;')
   })
 
-  it('does not switch to class token mode when styleRoot is explicitly undefined', () => {
+  it('uses the document style root when styleRoot is explicitly undefined', () => {
     const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
       lang: 'ts',
       theme: 'vitesse-dark',
       styleRoot: undefined,
     })
 
-    expect(html).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')
-    expect(html).not.toContain('class="smd-token-')
+    expect(html).toContain('class="smd-token-')
+    expect(html).not.toContain('style="color: #ff0000;')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
+      .toContain('color: #ff0000;')
   })
 
   it('falls back to inline token styles when styleRoot is explicitly null', () => {

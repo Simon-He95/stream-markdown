@@ -325,16 +325,19 @@ describe('registerHighlight', () => {
     }
   })
 
-  it('does not keep a failed theme pending for unrelated future registrations', async () => {
+  it('retries a failed theme on the next registration', async () => {
     vi.resetModules()
 
     const badTheme = { name: 'bad-theme', color: '#ff0000' }
     const goodTheme = { name: 'good-theme', color: '#0000ff' }
     let color = ''
+    let shouldFail = true
 
     const loadTheme = vi.fn(async (theme: typeof badTheme | typeof goodTheme | string) => {
-      if (theme === badTheme)
+      if (theme === badTheme && shouldFail) {
+        shouldFail = false
         throw new Error('bad theme')
+      }
 
       if (theme === goodTheme)
         color = theme.color
@@ -372,8 +375,9 @@ describe('registerHighlight', () => {
         .resolves
         .toBe(hl)
 
-      expect(loadTheme).toHaveBeenCalledTimes(2)
-      expect(loadTheme).toHaveBeenNthCalledWith(2, goodTheme)
+      expect(loadTheme).toHaveBeenCalledTimes(3)
+      expect(loadTheme).toHaveBeenNthCalledWith(2, badTheme)
+      expect(loadTheme).toHaveBeenNthCalledWith(3, goodTheme)
       expect(renderCodeWithTokens(hl as any, 'const a = 1', {
         lang: 'ts',
         theme: 'good-theme',
@@ -381,6 +385,57 @@ describe('registerHighlight', () => {
         tokenCache: false,
         htmlCache: false,
       })).toContain('color: #0000ff;')
+
+      disposeHighlighter()
+    }
+    finally {
+      vi.doUnmock('shiki')
+      vi.resetModules()
+    }
+  })
+
+  it('retries a failed language on the next registration', async () => {
+    vi.resetModules()
+
+    let shouldFail = true
+    const loadLanguage = vi.fn(async (lang: string) => {
+      if (lang === 'bad-lang' && shouldFail) {
+        shouldFail = false
+        throw new Error('bad language')
+      }
+    })
+
+    const highlighter = {
+      async loadLanguage(lang: string) {
+        await loadLanguage(lang)
+      },
+      async loadTheme() {},
+    }
+
+    vi.doMock('shiki', () => ({
+      createHighlighter: vi.fn(async () => highlighter),
+    }))
+
+    try {
+      const { disposeHighlighter, registerHighlight } = await import('../packages/stream-markdown/src/utils/highlight.js')
+
+      const hl = await registerHighlight({ langs: ['ts'], themes: ['vitesse-dark'] as any })
+
+      await expect(
+        registerHighlight({ langs: ['bad-lang'], themes: ['vitesse-dark'] as any }),
+      )
+        .rejects
+        .toThrow('bad language')
+
+      await expect(
+        registerHighlight({ langs: ['good-lang'], themes: ['vitesse-dark'] as any }),
+      )
+        .resolves
+        .toBe(hl)
+
+      expect(loadLanguage).toHaveBeenCalledTimes(3)
+      expect(loadLanguage).toHaveBeenNthCalledWith(2, 'bad-lang')
+      expect(loadLanguage).toHaveBeenNthCalledWith(3, 'good-lang')
 
       disposeHighlighter()
     }
