@@ -169,6 +169,8 @@ function isThemeLoaded(theme: HighlightTheme): boolean {
 function markThemeLoaded(theme: HighlightTheme): void {
   if (typeof theme === 'string') {
     loadedBundledThemes.add(theme)
+    // A bundled theme with the same id can overwrite a previously loaded object theme.
+    loadedObjectThemesById.delete(theme)
     return
   }
 

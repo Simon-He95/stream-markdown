@@ -68,6 +68,65 @@ describe('registerHighlight', () => {
     }
   })
 
+  it('reloads a same-name object theme after a string theme with that id was loaded', async () => {
+    vi.resetModules()
+
+    const objectTheme = { name: 'theme-id-collision', color: '#ff0000' }
+    let color = ''
+
+    const loadTheme = vi.fn(async (theme: typeof objectTheme | string) => {
+      color = typeof theme === 'string' ? '#0000ff' : theme.color
+    })
+
+    const highlighter = {
+      codeToThemedTokens(code: string) {
+        return code.split('\n').map(line => [{ content: line, color }])
+      },
+      async loadTheme(theme: typeof objectTheme | string) {
+        await loadTheme(theme)
+      },
+      async loadLanguage() {},
+    }
+
+    vi.doMock('shiki', () => ({
+      createHighlighter: vi.fn(async ({ themes }: { themes: Array<typeof objectTheme | string> }) => {
+        for (const theme of themes)
+          await highlighter.loadTheme(theme)
+        return highlighter
+      }),
+    }))
+
+    try {
+      const { disposeHighlighter, registerHighlight } = await import('../packages/stream-markdown/src/utils/highlight.js')
+      const { renderCodeWithTokens } = await import('../packages/stream-markdown/src/utils/shiki-render.js')
+
+      const hl = await registerHighlight({ langs: ['ts'], themes: [objectTheme as any] })
+      const opts = {
+        lang: 'ts',
+        theme: 'theme-id-collision',
+        tokenStyleMode: 'inline' as const,
+        htmlCache: true,
+        tokenCache: true,
+      }
+
+      await registerHighlight({ langs: ['ts'], themes: ['theme-id-collision' as any] })
+      expect(renderCodeWithTokens(hl as any, 'const a = 1', opts))
+        .toContain('color: #0000ff;')
+
+      await registerHighlight({ langs: ['ts'], themes: [objectTheme as any] })
+
+      expect(loadTheme).toHaveBeenCalledTimes(3)
+      expect(renderCodeWithTokens(hl as any, 'const a = 1', opts))
+        .toContain('color: #ff0000;')
+
+      disposeHighlighter()
+    }
+    finally {
+      vi.doUnmock('shiki')
+      vi.resetModules()
+    }
+  })
+
   it('does not reload an unchanged same-object custom theme', async () => {
     vi.resetModules()
 
