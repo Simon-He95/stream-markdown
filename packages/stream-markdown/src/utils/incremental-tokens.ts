@@ -5,9 +5,9 @@ import { getHighlighterRevision } from './highlighter-revision.js'
 import { renderCodeWithTokens } from './shiki-render.js'
 import { getTokenLines } from './token-cache.js'
 import {
+  applyTokenStyleToElement,
   canUseTokenStyleClasses,
   ensureTokenStyleSheet,
-  getTokenClassName,
   getTokenStyleAttr,
   getTokenStyleSignature,
   normalizeCssColor,
@@ -425,14 +425,7 @@ function createLineElement(
     }
 
     const tspan = ownerDocument.createElement('span')
-    if (tokenStyleMode === 'class') {
-      const className = getTokenClassName(t.color, t.fontStyle)
-      if (className)
-        tspan.className = className
-    }
-    else if (style) {
-      tspan.setAttribute('style', style)
-    }
+    applyTokenStyleToElement(tspan, t.color, t.fontStyle, tokenStyleMode)
     // Use textContent to avoid HTML parsing and to preserve escaped content
     tspan.textContent = content
     span.appendChild(tspan)

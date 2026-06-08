@@ -229,6 +229,65 @@ describe('createShikiStreamCachedRenderer', () => {
     renderer.dispose()
   })
 
+  it('does not leave stale earlier lines when appendOnlyFastPath is requested and tokenizer recalls tokens', async () => {
+    shikiStreamMock.enqueueResults.push(
+      {
+        recall: 0,
+        stable: [
+          { content: 'a', color: '#ff0000', fontStyle: 0 },
+          { content: '\n', color: '#ff0000', fontStyle: 0 },
+          { content: 'b', color: '#ff0000', fontStyle: 0 },
+        ],
+        unstable: [],
+      },
+      {
+        recall: 3,
+        stable: [
+          { content: 'a', color: '#0000ff', fontStyle: 0 },
+          { content: '\n', color: '#0000ff', fontStyle: 0 },
+          { content: 'bc', color: '#0000ff', fontStyle: 0 },
+        ],
+        unstable: [],
+      },
+    )
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+      tokenStyleMode: 'inline',
+      appendOnlyFastPath: true,
+    })
+
+    await renderer.updateCode('a\nb')
+    await new Promise(r => setTimeout(r, 0))
+
+    let lines = Array.from(container.querySelectorAll('code .line')) as HTMLElement[]
+    expect(lines).toHaveLength(2)
+    expect((lines[0].querySelector('span') as HTMLElement).getAttribute('style'))
+      .toContain('color: #ff0000;')
+    expect((lines[1].querySelector('span') as HTMLElement).getAttribute('style'))
+      .toContain('color: #ff0000;')
+
+    await renderer.updateCode('a\nbc')
+    await new Promise(r => setTimeout(r, 0))
+
+    lines = Array.from(container.querySelectorAll('code .line')) as HTMLElement[]
+    expect(lines).toHaveLength(2)
+    expect(lines[0].textContent).toBe('a')
+    expect(lines[1].textContent).toBe('bc')
+    expect((lines[0].querySelector('span') as HTMLElement).getAttribute('style'))
+      .toContain('color: #0000ff;')
+    expect((lines[1].querySelector('span') as HTMLElement).getAttribute('style'))
+      .toContain('color: #0000ff;')
+
+    renderer.dispose()
+  })
+
   it('renders initial empty code and re-renders it on theme changes', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

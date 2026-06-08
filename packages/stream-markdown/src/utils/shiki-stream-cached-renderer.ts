@@ -245,7 +245,8 @@ export function createShikiStreamCachedRenderer(
     tokenStyleMode: options.tokenStyleMode,
     compareMode: options.compareMode,
     skipSameCode: options.skipSameCode,
-    appendOnlyFastPath: options.appendOnlyFastPath,
+    // shiki-stream can recall and rewrite tokens before the previous last line.
+    appendOnlyFastPath: false,
     throttleMs: options.throttleMs,
     onResult: options.onResult,
   })

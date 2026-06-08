@@ -327,6 +327,27 @@ describe('updateCodeTokensIncremental', () => {
     expect(redFirst).not.toBe(blueFirst)
   })
 
+  it('falls back to inline token styles after the generated class rule cap', async () => {
+    vi.resetModules()
+    const {
+      applyTokenStyleToElement,
+      getTokenStyleAttr,
+    } = await import('../packages/stream-markdown/src/utils/token-style.js')
+
+    expect(getTokenStyleAttr('#000000', 0, 'class')).toMatch(/^ class="smd-token-/)
+
+    for (let i = 1; i < 2048; i++)
+      expect(getTokenStyleAttr(`#${i.toString(16).padStart(6, '0')}`, 0, 'class')).toMatch(/^ class="smd-token-/)
+
+    const cappedStyleAttr = getTokenStyleAttr('#000800', 0, 'class')
+    expect(cappedStyleAttr).toBe(' style="color: #000800;"')
+
+    const el = document.createElement('span')
+    applyTokenStyleToElement(el, '#000801', 0, 'class')
+    expect(el.className).toBe('')
+    expect(el.getAttribute('style')).toBe('color: #000801;')
+  })
+
   it('does not overwrite an existing token style element from another bundle instance', () => {
     const foreignStyle = document.createElement('style')
     foreignStyle.dataset.streamMarkdownTokenStyles = ''

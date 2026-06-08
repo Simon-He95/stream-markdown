@@ -42,6 +42,7 @@ const TOKEN_STYLE_CACHE = new Map<string, string>()
 const TOKEN_STYLE_BY_CLASS = new Map<string, string>()
 const TOKEN_STYLE_RULES: string[] = []
 const TOKEN_STYLE_SELECTOR_SPECIFICITY = 3
+const MAX_TOKEN_STYLE_RULES = 2048
 let tokenStyleGeneration = 0
 let tokenStyleSheetText = ''
 let tokenStyleSheetTextGeneration = -1
@@ -180,7 +181,7 @@ function tokenClassSelector(className: string): string {
   return Array.from({ length: TOKEN_STYLE_SELECTOR_SPECIFICITY }, () => `.${className}`).join('')
 }
 
-function getTokenClassNameForStyle(style: string): string {
+function getTokenClassNameForStyle(style: string): string | undefined {
   if (!style)
     return ''
 
@@ -195,6 +196,8 @@ function getTokenClassNameForStyle(style: string): string {
   while (true) {
     const existingStyle = TOKEN_STYLE_BY_CLASS.get(className)
     if (!existingStyle) {
+      if (TOKEN_STYLE_RULES.length >= MAX_TOKEN_STYLE_RULES)
+        return undefined
       TOKEN_CLASS_CACHE.set(style, className)
       TOKEN_STYLE_BY_CLASS.set(className, style)
       TOKEN_STYLE_RULES.push(`${tokenClassSelector(className)}{${style}}`)
@@ -212,7 +215,7 @@ function getTokenClassNameForStyle(style: string): string {
 }
 
 export function getTokenClassName(color?: string, fontStyle?: number): string {
-  return getTokenClassNameForStyle(tokenStyle(color, fontStyle))
+  return getTokenClassNameForStyle(tokenStyle(color, fontStyle)) ?? ''
 }
 
 export function getTokenInlineStyleAttr(color?: string, fontStyle?: number): string {
@@ -228,7 +231,8 @@ export function getTokenClassAttr(color?: string, fontStyle?: number): string {
   if (!style)
     return ''
 
-  return ` class="${getTokenClassNameForStyle(style)}"`
+  const className = getTokenClassNameForStyle(style)
+  return className ? ` class="${className}"` : ''
 }
 
 export function getTokenStyleAttr(
@@ -236,9 +240,32 @@ export function getTokenStyleAttr(
   fontStyle?: number,
   mode: TokenStyleMode = typeof document === 'undefined' ? 'inline' : 'class',
 ): string {
-  if (mode === 'class')
-    return getTokenClassAttr(color, fontStyle)
+  if (mode === 'class') {
+    const classAttr = getTokenClassAttr(color, fontStyle)
+    return classAttr || getTokenInlineStyleAttr(color, fontStyle)
+  }
   return getTokenInlineStyleAttr(color, fontStyle)
+}
+
+export function applyTokenStyleToElement(
+  element: HTMLElement,
+  color?: string,
+  fontStyle?: number,
+  mode: TokenStyleMode = typeof document === 'undefined' ? 'inline' : 'class',
+): void {
+  const style = tokenStyle(color, fontStyle)
+  if (!style)
+    return
+
+  if (mode === 'class') {
+    const className = getTokenClassNameForStyle(style)
+    if (className) {
+      element.className = className
+      return
+    }
+  }
+
+  element.setAttribute('style', style)
 }
 
 function isDocumentRoot(node: Node): node is Document {
