@@ -30,8 +30,5 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
-      - name: Test
-        run: pnpm test -- --run
-
-      - name: Build package
-        run: pnpm --filter stream-markdown run build
+      - name: Build package and test
+        run: pnpm run test:ci
