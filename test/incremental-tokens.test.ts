@@ -594,6 +594,30 @@ describe('updateCodeTokensIncremental', () => {
     expect(lines[1].textContent).toBe('b')
   })
 
+  it('falls back to full render when tracked pre gets extra children', () => {
+    updateSourceCodeTokensIncremental(container, hl as any, 'a', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const stale = document.createElement('span')
+    stale.textContent = 'stale'
+    container.querySelector('pre')!.appendChild(stale)
+
+    const result = updateSourceCodeTokensIncremental(container, hl as any, 'ab', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(result).toBe('full')
+
+    const pre = container.querySelector('pre')!
+    expect(pre.childNodes).toHaveLength(1)
+    expect(pre.firstElementChild?.tagName.toLowerCase()).toBe('code')
+    expect(pre.textContent).toBe('ab')
+    expect(container.querySelector('pre > span')).toBeNull()
+  })
+
   it('falls back to full render when tracked code childNodes contain external non-render nodes', () => {
     updateSourceCodeTokensIncremental(container, hl as any, 'a\nb', {
       lang: 'ts',

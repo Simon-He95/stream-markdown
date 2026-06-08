@@ -787,6 +787,42 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     updater.dispose()
   })
 
+  it('repairs externally added pre children on same-code scheduled updates', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const results: string[] = []
+    const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      throttleMs: 0,
+      onResult: result => results.push(result),
+    })
+
+    updater.update('same')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(results).toEqual(['full'])
+
+    const stale = document.createElement('span')
+    stale.textContent = 'stale'
+    container.querySelector('pre')!.appendChild(stale)
+
+    results.length = 0
+    updater.update('same')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect(results).toEqual(['full'])
+
+    const pre = container.querySelector('pre')!
+    expect(pre.childNodes).toHaveLength(1)
+    expect(pre.firstElementChild?.tagName.toLowerCase()).toBe('code')
+    expect(pre.textContent).toBe('same')
+    expect(container.querySelector('pre > span')).toBeNull()
+
+    updater.dispose()
+  })
+
   // Note: starvation regression is covered by integration manual testing due to
   // jsdom/requestIdleCallback variability across environments.
 })

@@ -158,6 +158,8 @@ function hasExpectedRenderedShell(
     && preEl.parentElement === container
     && container.childNodes.length === 1
     && container.firstChild === preEl
+    && preEl.childNodes.length === 1
+    && preEl.firstChild === codeEl
     && getClassAttribute(preEl) === options.preClass
     && getClassAttribute(codeEl) === options.codeClass
     && hasExpectedPreStyle(preEl, options.backgroundColor)
