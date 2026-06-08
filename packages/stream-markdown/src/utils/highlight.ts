@@ -52,6 +52,8 @@ const pendingLangs = new Set<string>()
 let pendingThemes: HighlightTheme[] = []
 const loadedLangs = new Set<string>()
 const loadedBundledThemes = new Set<string>()
+const loadedObjectThemes = new WeakMap<object, { generation: number, fingerprint: string }>()
+const loadedObjectThemesById = new Map<string, { generation: number, fingerprint: string }>()
 let applyPromise: Promise<void> = Promise.resolve()
 let highlighterGeneration = 0
 
@@ -71,8 +73,54 @@ function isThemeObject(theme: HighlightTheme): theme is HighlightTheme & object 
   return !!theme && typeof theme === 'object'
 }
 
+type ThemeFingerprintValue
+  = | null
+    | boolean
+    | number
+    | string
+    | ThemeFingerprintValue[]
+    | { [key: string]: ThemeFingerprintValue }
+
+function normalizeThemeFingerprint(value: unknown): ThemeFingerprintValue {
+  if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string')
+    return value
+
+  if (Array.isArray(value))
+    return value.map(normalizeThemeFingerprint)
+
+  const input = value as Record<string, unknown>
+  const output: { [key: string]: ThemeFingerprintValue } = {}
+
+  for (const key of Object.keys(input).sort())
+    output[key] = normalizeThemeFingerprint(input[key])
+
+  return output
+}
+
+function getThemeFingerprint(theme: HighlightTheme): string | undefined {
+  return isThemeObject(theme)
+    ? JSON.stringify(normalizeThemeFingerprint(theme))
+    : undefined
+}
+
+function getLoadedObjectThemeFingerprint(theme: HighlightTheme): string | undefined {
+  if (!isThemeObject(theme))
+    return undefined
+
+  const id = getThemeId(theme)
+  const entry = id
+    ? loadedObjectThemesById.get(id)
+    : loadedObjectThemes.get(theme)
+
+  return entry?.generation === highlighterGeneration ? entry.fingerprint : undefined
+}
+
 function isThemeLoaded(theme: HighlightTheme): boolean {
-  return typeof theme === 'string' && loadedBundledThemes.has(theme)
+  if (typeof theme === 'string')
+    return loadedBundledThemes.has(theme)
+
+  const fingerprint = getThemeFingerprint(theme)
+  return fingerprint !== undefined && getLoadedObjectThemeFingerprint(theme) === fingerprint
 }
 
 function markThemeLoaded(theme: HighlightTheme): void {
@@ -85,6 +133,15 @@ function markThemeLoaded(theme: HighlightTheme): void {
     return
 
   const id = getThemeId(theme)
+  const fingerprint = getThemeFingerprint(theme)
+  if (fingerprint !== undefined) {
+    const entry = { generation: highlighterGeneration, fingerprint }
+    if (id)
+      loadedObjectThemesById.set(id, entry)
+    else
+      loadedObjectThemes.set(theme, entry)
+  }
+
   if (id)
     loadedBundledThemes.delete(id)
 }
@@ -335,5 +392,6 @@ export function disposeHighlighter() {
   pendingThemes = []
   loadedLangs.clear()
   loadedBundledThemes.clear()
+  loadedObjectThemesById.clear()
   applyPromise = Promise.resolve()
 }

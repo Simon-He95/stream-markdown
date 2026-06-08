@@ -68,6 +68,43 @@ describe('registerHighlight', () => {
     }
   })
 
+  it('does not reload an unchanged same-object custom theme', async () => {
+    vi.resetModules()
+
+    const theme = { name: 'stable-theme', color: '#ff0000' }
+    const loadTheme = vi.fn(async (nextTheme: typeof theme) => nextTheme.color)
+
+    const highlighter = {
+      async loadTheme(nextTheme: typeof theme) {
+        await loadTheme(nextTheme)
+      },
+      async loadLanguage() {},
+    }
+
+    vi.doMock('shiki', () => ({
+      createHighlighter: vi.fn(async ({ themes }: { themes: Array<typeof theme> }) => {
+        for (const nextTheme of themes)
+          await highlighter.loadTheme(nextTheme)
+        return highlighter
+      }),
+    }))
+
+    try {
+      const { disposeHighlighter, registerHighlight } = await import('../packages/stream-markdown/src/utils/highlight.js')
+
+      await registerHighlight({ langs: ['ts'], themes: [theme as any] })
+      await registerHighlight({ langs: ['ts'], themes: [theme as any] })
+
+      expect(loadTheme).toHaveBeenCalledTimes(1)
+
+      disposeHighlighter()
+    }
+    finally {
+      vi.doUnmock('shiki')
+      vi.resetModules()
+    }
+  })
+
   it('reloads a mutated same-object custom theme', async () => {
     vi.resetModules()
 
