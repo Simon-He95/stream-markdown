@@ -127,6 +127,37 @@ describe('createShikiStreamCachedRenderer', () => {
     renderer.dispose()
   })
 
+  it('renders synchronously when scheduleInRaf is false', async () => {
+    shikiStreamMock.enqueueResults.push({
+      recall: 0,
+      stable: [{ content: 'const cachedSync = true' }],
+      unstable: [],
+    })
+
+    const idleCallbacks: IdleRequestCallback[] = []
+    ;(window as any).requestIdleCallback = (cb: IdleRequestCallback) => {
+      idleCallbacks.push(cb)
+      return idleCallbacks.length
+    }
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+    })
+
+    await renderer.updateCode('const cachedSync = true')
+
+    expect(idleCallbacks).toHaveLength(0)
+    expect(container.querySelector('code')?.textContent).toBe('const cachedSync = true')
+
+    renderer.dispose()
+  })
+
   it('handles empty tokenizer chunks after theme changes', async () => {
     shikiStreamMock.enqueueResults.push(
       { recall: 0, stable: [{ content: 'const a = 1' }], unstable: [] },

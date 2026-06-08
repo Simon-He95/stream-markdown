@@ -325,6 +325,71 @@ describe('registerHighlight', () => {
     }
   })
 
+  it('does not keep a failed theme pending for unrelated future registrations', async () => {
+    vi.resetModules()
+
+    const badTheme = { name: 'bad-theme', color: '#ff0000' }
+    const goodTheme = { name: 'good-theme', color: '#0000ff' }
+    let color = ''
+
+    const loadTheme = vi.fn(async (theme: typeof badTheme | typeof goodTheme | string) => {
+      if (theme === badTheme)
+        throw new Error('bad theme')
+
+      if (theme === goodTheme)
+        color = theme.color
+    })
+
+    const highlighter = {
+      codeToThemedTokens(code: string) {
+        return code.split('\n').map(line => [{ content: line, color }])
+      },
+      async loadTheme(theme: typeof badTheme | typeof goodTheme | string) {
+        await loadTheme(theme)
+      },
+      async loadLanguage() {},
+    }
+
+    vi.doMock('shiki', () => ({
+      createHighlighter: vi.fn(async () => highlighter),
+    }))
+
+    try {
+      const { disposeHighlighter, registerHighlight } = await import('../packages/stream-markdown/src/utils/highlight.js')
+      const { renderCodeWithTokens } = await import('../packages/stream-markdown/src/utils/shiki-render.js')
+
+      const hl = await registerHighlight({ langs: ['ts'], themes: ['vitesse-dark'] as any })
+
+      await expect(
+        registerHighlight({ langs: ['ts'], themes: [badTheme as any] }),
+      )
+        .rejects
+        .toThrow('bad theme')
+
+      await expect(
+        registerHighlight({ langs: ['ts'], themes: [goodTheme as any] }),
+      )
+        .resolves
+        .toBe(hl)
+
+      expect(loadTheme).toHaveBeenCalledTimes(2)
+      expect(loadTheme).toHaveBeenNthCalledWith(2, goodTheme)
+      expect(renderCodeWithTokens(hl as any, 'const a = 1', {
+        lang: 'ts',
+        theme: 'good-theme',
+        tokenStyleMode: 'inline',
+        tokenCache: false,
+        htmlCache: false,
+      })).toContain('color: #0000ff;')
+
+      disposeHighlighter()
+    }
+    finally {
+      vi.doUnmock('shiki')
+      vi.resetModules()
+    }
+  })
+
   it('does not return a highlighter created before dispose', async () => {
     vi.resetModules()
 

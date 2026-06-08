@@ -136,6 +136,34 @@ describe('createShikiStreamRenderer', () => {
     renderer.dispose()
   })
 
+  it('renders synchronously when scheduleInRaf is false', async () => {
+    const idleCallbacks: IdleRequestCallback[] = []
+    const requestIdleCallbackMock = (cb: IdleRequestCallback) => {
+      idleCallbacks.push(cb)
+      return idleCallbacks.length
+    }
+
+    ;(globalThis as any).requestIdleCallback = requestIdleCallbackMock
+    ;(window as any).requestIdleCallback = requestIdleCallbackMock
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+    })
+
+    await renderer.updateCode('const sync = true')
+
+    expect(idleCallbacks).toHaveLength(0)
+    expect(container.querySelector('code')?.textContent).toBe('const sync = true')
+
+    renderer.dispose()
+  })
+
   it('cancels stale idle token updates when newer code arrives', async () => {
     const rafCallbacks: FrameRequestCallback[] = []
     const idleCallbacks: IdleRequestCallback[] = []

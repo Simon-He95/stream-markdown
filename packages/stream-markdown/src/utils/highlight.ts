@@ -415,6 +415,7 @@ async function loadPendingIntoHighlighter(
   let didMutateHighlighter = false
   let langIndex = 0
   let themeIndex = 0
+  let loadingPhase: 'lang' | 'theme' | null = null
 
   try {
     if (langs.length > 0 && hasHighlighterMutation(targetHighlighter, 'loadLanguage')) {
@@ -423,6 +424,7 @@ async function loadPendingIntoHighlighter(
         if (loadedLangs.has(l))
           continue
 
+        loadingPhase = 'lang'
         await callHighlighterMutation(targetHighlighter, 'loadLanguage', l)
         if (!isCurrentHighlighterInstance(targetHighlighter, generation))
           return
@@ -437,6 +439,7 @@ async function loadPendingIntoHighlighter(
         if (isThemeLoaded(t))
           continue
 
+        loadingPhase = 'theme'
         await callHighlighterMutation(targetHighlighter, 'loadTheme', t)
         if (!isCurrentHighlighterInstance(targetHighlighter, generation))
           return
@@ -450,12 +453,19 @@ async function loadPendingIntoHighlighter(
     if (!isCurrentHighlighterInstance(targetHighlighter, generation))
       return
 
-    for (const l of langs.slice(langIndex)) {
+    const remainingLangs = loadingPhase === 'lang'
+      ? langs.slice(langIndex + 1)
+      : langs.slice(langIndex)
+    const remainingThemes = loadingPhase === 'theme'
+      ? themes.slice(themeIndex + 1)
+      : themes.slice(themeIndex)
+
+    for (const l of remainingLangs) {
       if (!loadedLangs.has(l))
         pendingLangs.add(l)
     }
 
-    requeuePendingThemes(themes.slice(themeIndex))
+    requeuePendingThemes(remainingThemes)
     throw error
   }
   finally {
