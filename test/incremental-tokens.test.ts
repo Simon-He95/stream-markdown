@@ -291,6 +291,34 @@ describe('updateCodeTokensIncremental', () => {
     expect(container.querySelector('code')?.textContent).toBe('ab')
   })
 
+  it('normalizes CR-only token differences when comparing trusted line signatures', () => {
+    const opts = {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline' as const,
+      compareMode: 'signature' as const,
+    }
+
+    expect(updateCodeTokensIncremental(container, hl as any, 'a\rb', {
+      ...opts,
+      tokenLines: [[{ content: 'a\rb', color: '#ff0000', fontStyle: 0 }]],
+    })).toBe('full')
+
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+
+    expect(updateCodeTokensIncremental(container, hl as any, 'ab', {
+      ...opts,
+      tokenLines: [[{ content: 'ab', color: '#ff0000', fontStyle: 0 }]],
+    })).toBe('noop')
+
+    expect(updateCodeTokensIncremental(container, hl as any, 'a\rb', {
+      ...opts,
+      tokenLines: [[{ content: 'a\rb', color: '#ff0000', fontStyle: 0 }]],
+    })).toBe('noop')
+
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+  })
+
   it('forces a full render when incremental tokenStyleMode changes', () => {
     updateCodeTokensIncremental(container, coloredHl as any, 'const', {
       lang: 'ts',

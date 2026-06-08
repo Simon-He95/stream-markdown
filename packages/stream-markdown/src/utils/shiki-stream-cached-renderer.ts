@@ -287,10 +287,6 @@ export function createShikiStreamCachedRenderer(
     }, priority)
   }
 
-  const hasBufferedCodeContent = () => {
-    return tokenBuffer.some(token => token.content.replace(/\r/g, '').length > 0)
-  }
-
   const normalizeCodeText = (value: string) => value.replace(/\r/g, '')
 
   const getBufferedCodeText = () => {
@@ -308,7 +304,7 @@ export function createShikiStreamCachedRenderer(
   }
 
   const scheduleBufferedRender = (code: string) => {
-    if (code.length > 0 && (!hasBufferedCodeContent() || !bufferedTokensMatchCode(code))) {
+    if (!bufferedTokensMatchCode(code)) {
       clearTokenBuffer()
       scheduleRender(code)
       return

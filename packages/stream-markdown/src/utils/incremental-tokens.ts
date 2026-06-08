@@ -76,8 +76,12 @@ function getIdleTimeRemaining(deadline: any, fallback = 50): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
 }
 
-function escapeHtml(str: string): string {
+function normalizeRenderedContent(str: string): string {
   return str.replace(/\r/g, '')
+}
+
+function escapeHtml(str: string): string {
+  return normalizeRenderedContent(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -248,7 +252,7 @@ function getCodeLineElements(codeEl: HTMLElement, lineClass: string): HTMLElemen
 }
 
 function previousCodeLines(code: string): string[] {
-  return code.replace(/\r/g, '').split('\n')
+  return normalizeRenderedContent(code).split('\n')
 }
 
 function hasExpectedLineElementShell(line: HTMLElement, lineClass: string): boolean {
@@ -330,7 +334,7 @@ function lineInnerHtml(
     while (i < tokens.length) {
       const t = tokens[i]
       const styleAttr = getTokenStyleAttr(t.color, t.fontStyle, tokenStyleMode)
-      let content = t.content
+      let content = normalizeRenderedContent(t.content)
       i++
 
       while (i < tokens.length) {
@@ -338,7 +342,7 @@ function lineInnerHtml(
         const styleAttr2 = getTokenStyleAttr(t2.color, t2.fontStyle, tokenStyleMode)
         if (styleAttr2 !== styleAttr)
           break
-        content += t2.content
+        content += normalizeRenderedContent(t2.content)
         i++
       }
 
@@ -371,7 +375,7 @@ function lineSignature(
 
     while (i < tokens.length) {
       const token = tokens[i]
-      content += token.content
+      content += normalizeRenderedContent(token.content)
       i++
 
       if (tokenStyleMode !== 'class')
@@ -414,7 +418,7 @@ function createLineElement(
   while (i < tokens.length) {
     const t = tokens[i]
     const style = getTokenStyleSignature(t.color, t.fontStyle)
-    let content = t.content
+    let content = normalizeRenderedContent(t.content)
     i++
 
     if (tokenStyleMode === 'class') {
@@ -423,7 +427,7 @@ function createLineElement(
         const style2 = getTokenStyleSignature(t2.color, t2.fontStyle)
         if (style2 !== style)
           break
-        content += t2.content
+        content += normalizeRenderedContent(t2.content)
         i++
       }
     }
