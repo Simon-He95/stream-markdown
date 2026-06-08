@@ -1,6 +1,6 @@
 import type { TokenIncrementalOptions, TokenIncrementalUpdater } from './incremental-tokens.js'
 import type { ThemedToken } from './shiki-render.js'
-import type { ShikiStreamRendererOptions } from './shiki-stream-renderer.js'
+import type { ShikiStreamRendererOptions as BaseShikiStreamRendererOptions } from './shiki-stream-renderer.js'
 import { ShikiStreamTokenizer } from 'shiki-stream'
 import { defaultLanguages, registerHighlight } from './highlight.js'
 import { getHighlighterRevision } from './highlighter-revision.js'
@@ -8,7 +8,7 @@ import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
 import { observeElement } from './shared-intersection-observer.js'
 
-export interface ShikiStreamCachedRendererOptions extends ShikiStreamRendererOptions {
+export interface ShikiStreamCachedRendererOptions extends Omit<BaseShikiStreamRendererOptions, 'appendOnlyFastPath'> {
   /**
    * If true (default), attempt to reuse Shiki grammar state for appended
    * content via shiki-stream. Set to false to always retokenize from scratch.
@@ -245,7 +245,8 @@ export function createShikiStreamCachedRenderer(
     tokenStyleMode: options.tokenStyleMode,
     compareMode: options.compareMode,
     skipSameCode: options.skipSameCode,
-    // shiki-stream can recall and rewrite tokens before the previous last line.
+    // shiki-stream can recall and rewrite tokens before the previous last line,
+    // so this renderer intentionally never exposes the append-only fast path.
     appendOnlyFastPath: false,
     throttleMs: options.throttleMs,
     onResult: options.onResult,

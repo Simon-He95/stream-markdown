@@ -105,6 +105,73 @@ describe('render scheduler', () => {
     }
   })
 
+  it('stops the current frame when a job pauses the scheduler', () => {
+    const origGlobalRaf = (globalThis as any).requestAnimationFrame
+    const origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame
+    const origWindowRaf = (window as any).requestAnimationFrame
+    const origWindowCancelRaf = (window as any).cancelAnimationFrame
+
+    const rafCallbacks: FrameRequestCallback[] = []
+    const requestAnimationFrame = vi.fn((cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb)
+      return rafCallbacks.length
+    })
+    const cancelAnimationFrame = vi.fn()
+
+    try {
+      ;(globalThis as any).requestAnimationFrame = requestAnimationFrame
+      ;(globalThis as any).cancelAnimationFrame = cancelAnimationFrame
+      ;(window as any).requestAnimationFrame = requestAnimationFrame
+      ;(window as any).cancelAnimationFrame = cancelAnimationFrame
+
+      resume()
+
+      const order: string[] = []
+      scheduleRenderJob(() => {
+        order.push('first')
+        pause()
+      })
+      scheduleRenderJob(() => order.push('second'))
+      scheduleRenderJob(() => order.push('third'))
+
+      expect(rafCallbacks).toHaveLength(1)
+
+      rafCallbacks.shift()?.(performance.now())
+
+      expect(order).toEqual(['first'])
+      expect(getQueueLength()).toBe(2)
+
+      resume()
+
+      expect(rafCallbacks).toHaveLength(1)
+      rafCallbacks.shift()?.(performance.now())
+
+      expect(order).toEqual(['first', 'second', 'third'])
+      expect(getQueueLength()).toBe(0)
+    }
+    finally {
+      if (origGlobalRaf === undefined)
+        delete (globalThis as any).requestAnimationFrame
+      else
+        (globalThis as any).requestAnimationFrame = origGlobalRaf
+
+      if (origGlobalCancelRaf === undefined)
+        delete (globalThis as any).cancelAnimationFrame
+      else
+        (globalThis as any).cancelAnimationFrame = origGlobalCancelRaf
+
+      if (origWindowRaf === undefined)
+        delete (window as any).requestAnimationFrame
+      else
+        (window as any).requestAnimationFrame = origWindowRaf
+
+      if (origWindowCancelRaf === undefined)
+        delete (window as any).cancelAnimationFrame
+      else
+        (window as any).cancelAnimationFrame = origWindowCancelRaf
+    }
+  })
+
   it('invalidates a cancelled frame callback even if it fires after resume', () => {
     const origGlobalRaf = (globalThis as any).requestAnimationFrame
     const origGlobalCancelRaf = (globalThis as any).cancelAnimationFrame

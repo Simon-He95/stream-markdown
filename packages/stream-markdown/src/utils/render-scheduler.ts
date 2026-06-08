@@ -180,12 +180,16 @@ function runFrame() {
 
       console.error('render-scheduler job error', e)
     }
+
+    if (paused)
+      break
+
     if (now() - start >= TIME_BUDGET) {
       // reached budget — schedule remainder for next frame
       break
     }
   }
-  if (hasQueuedJobs())
+  if (!paused && hasQueuedJobs())
     ensureFrame()
 }
 

@@ -261,7 +261,7 @@ describe('createShikiStreamCachedRenderer', () => {
       throttleMs: 0,
       tokenStyleMode: 'inline',
       appendOnlyFastPath: true,
-    })
+    } as any)
 
     await renderer.updateCode('a\nb')
     await new Promise(r => setTimeout(r, 0))

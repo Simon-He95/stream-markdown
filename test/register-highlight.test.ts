@@ -572,4 +572,58 @@ describe('registerHighlight', () => {
       vi.resetModules()
     }
   })
+
+  it('does not throw when custom theme fingerprint accessors throw', async () => {
+    vi.resetModules()
+
+    const theme: any = {
+      color: '#ff0000',
+    }
+    Object.defineProperty(theme, 'name', {
+      enumerable: true,
+      get() {
+        throw new Error('bad theme name')
+      },
+    })
+    Object.defineProperty(theme, 'settings', {
+      enumerable: true,
+      get() {
+        throw new Error('bad theme settings')
+      },
+    })
+
+    const highlighter = {
+      async loadTheme() {},
+      async loadLanguage() {},
+    }
+
+    const createHighlighter = vi.fn(async (options: { langs: string[], themes: any[] }) => {
+      void options
+      return highlighter
+    })
+
+    vi.doMock('shiki', () => ({
+      createHighlighter,
+    }))
+
+    try {
+      const { disposeHighlighter, registerHighlight } = await import('../packages/stream-markdown/src/utils/highlight.js')
+
+      await expect(registerHighlight({
+        langs: ['ts'],
+        themes: [theme],
+      })).resolves.toBe(highlighter)
+
+      const call = createHighlighter.mock.calls[0][0]
+      expect(call.langs).toEqual(['ts'])
+      expect(call.themes).toHaveLength(1)
+      expect(call.themes[0]).toBe(theme)
+
+      disposeHighlighter()
+    }
+    finally {
+      vi.doUnmock('shiki')
+      vi.resetModules()
+    }
+  })
 })

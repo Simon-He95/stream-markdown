@@ -76,8 +76,13 @@ function getThemeId(theme: HighlightTheme): string | undefined {
   if (typeof theme === 'string')
     return theme
 
-  const name = (theme as any)?.name
-  return typeof name === 'string' ? name : undefined
+  try {
+    const name = (theme as any)?.name
+    return typeof name === 'string' ? name : undefined
+  }
+  catch {
+    return undefined
+  }
 }
 
 function isThemeObject(theme: HighlightTheme): theme is HighlightTheme & object {
@@ -154,7 +159,12 @@ function getThemeFingerprint(theme: HighlightTheme): string | undefined {
   if (!isThemeObject(theme))
     return undefined
 
-  return JSON.stringify(normalizeThemeFingerprint(theme))
+  try {
+    return JSON.stringify(normalizeThemeFingerprint(theme))
+  }
+  catch {
+    return undefined
+  }
 }
 
 function getLoadedObjectThemeFingerprint(theme: HighlightTheme): string | undefined {
