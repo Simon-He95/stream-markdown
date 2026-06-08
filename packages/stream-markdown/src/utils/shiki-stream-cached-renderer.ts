@@ -3,6 +3,7 @@ import type { ThemedToken } from './shiki-render.js'
 import type { ShikiStreamRendererOptions } from './shiki-stream-renderer.js'
 import { ShikiStreamTokenizer } from 'shiki-stream'
 import { defaultLanguages, registerHighlight } from './highlight.js'
+import { getHighlighterRevision } from './highlighter-revision.js'
 import { createScheduledTokenIncrementalUpdater } from './incremental-tokens.js'
 import { scheduleRenderJob, setTimeBudget } from './render-scheduler.js'
 import { observeElement } from './shared-intersection-observer.js'
@@ -102,6 +103,7 @@ export function createShikiStreamCachedRenderer(
   let highlighter: any | null = null
   let tokenizer: ShikiStreamTokenizer | null = null
   let tokenBuffer: ThemedToken[] = []
+  let tokenBufferRevision = -1
   let updater: TokenIncrementalUpdater | null = null
   const useRaf = options.scheduleInRaf ?? true
   let scheduled = false
@@ -181,6 +183,15 @@ export function createShikiStreamCachedRenderer(
     const next = opChain.then(task, task)
     opChain = next.then(() => undefined, () => undefined)
     return next
+  }
+
+  const getCurrentHighlighterRevision = () => {
+    return highlighter ? getHighlighterRevision(highlighter) : -1
+  }
+
+  const clearTokenBuffer = () => {
+    tokenBuffer = []
+    tokenBufferRevision = getCurrentHighlighterRevision()
   }
 
   const cancelPendingRender = () => {
@@ -288,12 +299,15 @@ export function createShikiStreamCachedRenderer(
   }
 
   const bufferedTokensMatchCode = (code: string) => {
+    if (!highlighter || tokenBufferRevision !== getHighlighterRevision(highlighter))
+      return false
+
     return normalizeCodeText(getBufferedCodeText()) === normalizeCodeText(code)
   }
 
   const scheduleBufferedRender = (code: string) => {
     if (code.length > 0 && (!hasBufferedCodeContent() || !bufferedTokensMatchCode(code))) {
-      tokenBuffer = []
+      clearTokenBuffer()
       scheduleRender(code)
       return
     }
@@ -329,7 +343,7 @@ export function createShikiStreamCachedRenderer(
       if (disposed)
         return
       tokenizer = null
-      tokenBuffer = []
+      clearTokenBuffer()
       reinitUpdater()
     }
     else if (!updater) {
@@ -347,7 +361,7 @@ export function createShikiStreamCachedRenderer(
       && code.startsWith(prevCode)
     if (!canAppend) {
       tokenizer.clear()
-      tokenBuffer = []
+      clearTokenBuffer()
     }
 
     const chunk = canAppend ? code.slice(prevCode.length) : code
@@ -358,9 +372,10 @@ export function createShikiStreamCachedRenderer(
     if (canAppend && recall > 0)
       tokenBuffer.splice(Math.max(0, tokenBuffer.length - recall))
     else if (!canAppend)
-      tokenBuffer = []
+      clearTokenBuffer()
 
     tokenBuffer.push(...(stable ?? []), ...(unstable ?? []))
+    tokenBufferRevision = getCurrentHighlighterRevision()
     scheduleBufferedRender(code)
   })
 
@@ -376,7 +391,7 @@ export function createShikiStreamCachedRenderer(
     currentTheme = theme
     tokenizer?.clear()
     tokenizer = null
-    tokenBuffer = []
+    clearTokenBuffer()
     reinitUpdater()
 
     // Empty code is still renderable state. Without this, clearing code and then
@@ -394,6 +409,7 @@ export function createShikiStreamCachedRenderer(
     if (disposed)
       return
     tokenBuffer = [...(stable ?? []), ...(unstable ?? [])]
+    tokenBufferRevision = getCurrentHighlighterRevision()
     scheduleBufferedRender(currentCode)
   })
 
@@ -405,6 +421,7 @@ export function createShikiStreamCachedRenderer(
     tokenizer?.clear()
     tokenizer = null
     tokenBuffer = []
+    tokenBufferRevision = -1
     if (unregisterObserver) {
       unregisterObserver()
       unregisterObserver = null

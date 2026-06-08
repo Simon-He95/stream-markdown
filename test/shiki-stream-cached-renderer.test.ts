@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { bumpHighlighterRevision, clearHighlighterRevision } from '../packages/stream-markdown/src/utils/highlighter-revision.js'
 import { clearAll, getQueueLength, pause, resume } from '../packages/stream-markdown/src/utils/render-scheduler.js'
 import { createShikiStreamCachedRenderer } from '../packages/stream-markdown/src/utils/shiki-stream-cached-renderer.js'
 
@@ -10,12 +11,18 @@ const shikiStreamMock = vi.hoisted(() => ({
 
 const highlightMock = vi.hoisted(() => {
   const loadedThemes = new Set<string>(['vitesse-dark'])
+  const state = { tokenColor: undefined as string | undefined }
   const loadTheme = vi.fn(async (theme: string) => {
     loadedThemes.add(theme)
   })
   const highlighter = {
     codeToThemedTokens(code: string) {
-      return code.split('\n').map(line => [{ content: line }])
+      return code.split('\n').map((line) => {
+        if (!state.tokenColor)
+          return [{ content: line }]
+
+        return [{ content: line, color: state.tokenColor, fontStyle: 0 }]
+      })
     },
     getTheme: vi.fn((theme: string) => {
       return loadedThemes.has(theme) ? { bg: '#000000' } : undefined
@@ -30,7 +37,7 @@ const highlightMock = vi.hoisted(() => {
     return highlighter
   })
 
-  return { highlighter, loadedThemes, loadTheme, registerHighlight }
+  return { highlighter, loadedThemes, loadTheme, registerHighlight, state }
 })
 
 vi.mock('shiki-stream', () => ({
@@ -58,9 +65,11 @@ describe('createShikiStreamCachedRenderer', () => {
     shikiStreamMock.chunks = []
     highlightMock.loadedThemes.clear()
     highlightMock.loadedThemes.add('vitesse-dark')
+    highlightMock.state.tokenColor = undefined
     highlightMock.loadTheme.mockClear()
     highlightMock.highlighter.getTheme.mockClear()
     highlightMock.registerHighlight.mockClear()
+    clearHighlighterRevision(highlightMock.highlighter as any)
     document.body.innerHTML = ''
     document.head.innerHTML = ''
     ;(window as any).requestIdleCallback = (cb: IdleRequestCallback) => {
@@ -176,6 +185,46 @@ describe('createShikiStreamCachedRenderer', () => {
 
     expect(document.head.querySelector('style[data-stream-markdown-token-styles]')?.textContent)
       .toContain('color: #ff0000;')
+
+    renderer.dispose()
+  })
+
+  it('drops cached token buffers after highlighter revision changes', async () => {
+    shikiStreamMock.enqueueResults.push({
+      recall: 0,
+      stable: [{
+        content: 'const a = 1',
+        color: '#ff0000',
+        fontStyle: 0,
+      }],
+      unstable: [],
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+      tokenStyleMode: 'inline',
+    })
+
+    await renderer.updateCode('const a = 1')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect((container.querySelector('code .line span') as HTMLElement).getAttribute('style'))
+      .toContain('color: #ff0000;')
+
+    highlightMock.state.tokenColor = '#0000ff'
+    bumpHighlighterRevision(highlightMock.highlighter as any)
+
+    await renderer.updateCode('const a = 1')
+    await new Promise(r => setTimeout(r, 0))
+
+    expect((container.querySelector('code .line span') as HTMLElement).getAttribute('style'))
+      .toContain('color: #0000ff;')
 
     renderer.dispose()
   })

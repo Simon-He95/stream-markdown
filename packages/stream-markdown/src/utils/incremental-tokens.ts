@@ -1,6 +1,7 @@
 import type { Highlighter } from 'shiki'
 import type { RenderOptions, ThemedToken } from './shiki-render.js'
 import type { TokenStyleMode } from './token-style.js'
+import { getHighlighterRevision } from './highlighter-revision.js'
 import { renderCodeWithTokens } from './shiki-render.js'
 import { getTokenLines } from './token-cache.js'
 import {
@@ -82,6 +83,7 @@ function renderSignature(options: {
   lang: string
   theme: string
   backgroundColor: string
+  highlighterRevision: number
   tokenStyleMode: TokenStyleMode
   preClass: string
   codeClass: string
@@ -93,6 +95,7 @@ function renderSignature(options: {
     options.lang,
     options.theme,
     options.backgroundColor,
+    String(options.highlighterRevision),
     options.tokenStyleMode,
     options.preClass,
     options.codeClass,
@@ -539,6 +542,7 @@ export function updateCodeTokensIncremental(
     lang,
     theme,
     backgroundColor,
+    highlighterRevision: getHighlighterRevision(highlighter),
     tokenStyleMode,
     preClass,
     codeClass,
@@ -833,11 +837,13 @@ export function createTokenIncrementalUpdater(
         const codeClass = opts.codeClass ?? ''
         const lineClass = opts.lineClass ?? 'line'
         const showLineNumbers = opts.showLineNumbers ?? false
+        const backgroundColor = getThemeBackgroundColor(highlighter, opts.theme)
         const startingLineNumber = normalizeStartingLineNumber(opts.startingLineNumber ?? 1)
         const signature = renderSignature({
           lang: opts.lang,
           theme: opts.theme,
-          backgroundColor: getThemeBackgroundColor(highlighter, opts.theme),
+          backgroundColor,
+          highlighterRevision: getHighlighterRevision(highlighter),
           tokenStyleMode,
           preClass,
           codeClass,
@@ -847,7 +853,7 @@ export function createTokenIncrementalUpdater(
         })
         if (
           codeEl
-          && hasExpectedRenderedShell(target, codeEl, { preClass, codeClass, backgroundColor: getThemeBackgroundColor(highlighter, opts.theme) })
+          && hasExpectedRenderedShell(target, codeEl, { preClass, codeClass, backgroundColor })
           && RENDER_SIGNATURES.get(target) === signature
           && hasUnchangedRenderedCodeDom(target, codeEl)
           && (codeEl.textContent ?? '').replace(/\r/g, '') === code.replace(/\r/g, '')
@@ -1166,6 +1172,7 @@ class TokenUpdateScheduler {
             lang: task.opts.lang,
             theme: task.opts.theme,
             backgroundColor: getThemeBackgroundColor(task.highlighter, task.opts.theme),
+            highlighterRevision: getHighlighterRevision(task.highlighter),
             tokenStyleMode,
             preClass: task.opts.preClass ?? 'shiki',
             codeClass: task.opts.codeClass ?? '',
@@ -1247,7 +1254,8 @@ export function createScheduledTokenIncrementalUpdater(
 
     const preClass = opts.preClass ?? 'shiki'
     const codeClass = opts.codeClass ?? ''
-    if (!hasExpectedRenderedShell(target, codeEl, { preClass, codeClass, backgroundColor: getThemeBackgroundColor(highlighter, opts.theme) }))
+    const backgroundColor = getThemeBackgroundColor(highlighter, opts.theme)
+    if (!hasExpectedRenderedShell(target, codeEl, { preClass, codeClass, backgroundColor }))
       return false
 
     const styleRoot = getIncrementalStyleRoot(opts, target)
@@ -1258,7 +1266,8 @@ export function createScheduledTokenIncrementalUpdater(
     const signature = renderSignature({
       lang: opts.lang,
       theme: opts.theme,
-      backgroundColor: getThemeBackgroundColor(highlighter, opts.theme),
+      backgroundColor,
+      highlighterRevision: getHighlighterRevision(highlighter),
       tokenStyleMode,
       preClass,
       codeClass,

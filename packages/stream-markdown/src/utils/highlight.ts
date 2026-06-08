@@ -1,4 +1,5 @@
 import type { BundledTheme, Highlighter, SpecialTheme, ThemeInput } from 'shiki'
+import { bumpHighlighterRevision, clearHighlighterRevision } from './highlighter-revision.js'
 import { clearHtmlCache } from './html-cache.js'
 import { clearTokenCache } from './token-cache.js'
 
@@ -251,6 +252,7 @@ async function loadPendingIntoHighlighter(
   }
   finally {
     if (didMutateHighlighter && isCurrentHighlighterInstance(targetHighlighter, generation)) {
+      bumpHighlighterRevision(targetHighlighter)
       clearTokenCache(targetHighlighter)
       clearHtmlCache(targetHighlighter)
     }
@@ -341,6 +343,7 @@ export async function registerHighlight(options: {
 export function disposeHighlighter() {
   highlighterGeneration++
   if (highlighter) {
+    clearHighlighterRevision(highlighter)
     clearTokenCache(highlighter)
     clearHtmlCache(highlighter)
   }
