@@ -91,18 +91,18 @@ function renderSignature(options: {
   showLineNumbers: boolean
   startingLineNumber: number
 }): string {
-  return [
+  return JSON.stringify([
     options.lang,
     options.theme,
     options.backgroundColor,
-    String(options.highlighterRevision),
+    options.highlighterRevision,
     options.tokenStyleMode,
     options.preClass,
     options.codeClass,
     options.lineClass,
-    options.showLineNumbers ? '1' : '0',
-    String(options.startingLineNumber),
-  ].join('\u0001')
+    options.showLineNumbers,
+    options.startingLineNumber,
+  ])
 }
 
 function getThemeBackgroundColor(highlighter: Highlighter, theme: string): string {
@@ -346,57 +346,26 @@ function lineInnerHtml(
   return `${ln}${tokensHtml}`
 }
 
-function hashSignaturePart(hash: number, value: string): number {
-  let next = hash >>> 0
-
-  for (let i = 0; i < value.length; i++) {
-    next ^= value.charCodeAt(i)
-    next = Math.imul(next, 0x01000193)
-  }
-
-  return next >>> 0
-}
-
-function hashSignaturePart2(hash: number, value: string): number {
-  let next = hash >>> 0
-
-  for (let i = 0; i < value.length; i++)
-    next = (Math.imul(next, 33) ^ value.charCodeAt(i)) >>> 0
-
-  return next >>> 0
-}
-
 function lineSignature(
   tokens: ThemedToken[],
   showLineNumbers: boolean,
   lineNumber: number | undefined,
   tokenStyleMode: TokenStyleMode,
 ): string {
-  const lineNumberKey = showLineNumbers && typeof lineNumber === 'number'
-    ? String(lineNumber)
-    : ''
+  const parts: Array<string | number> = [
+    tokenStyleMode,
+    showLineNumbers && typeof lineNumber === 'number' ? lineNumber : '',
+  ]
 
-  let hash = hashSignaturePart(0x811C9DC5, `${tokenStyleMode}#${lineNumberKey}|`)
-  let hash2 = hashSignaturePart2(0x1505, `${tokenStyleMode}#${lineNumberKey}|`)
-  let totalLength = 0
-  let segmentCount = 0
   let i = 0
 
   while (i < tokens.length) {
     const style = getTokenStyleSignature(tokens[i].color, tokens[i].fontStyle)
-    let segmentLength = 0
-
-    hash = hashSignaturePart(hash, style)
-    hash = hashSignaturePart(hash, '\0')
-    hash2 = hashSignaturePart2(hash2, style)
-    hash2 = hashSignaturePart2(hash2, '\0')
+    let content = ''
 
     while (i < tokens.length) {
       const token = tokens[i]
-
-      hash = hashSignaturePart(hash, token.content)
-      hash2 = hashSignaturePart2(hash2, token.content)
-      segmentLength += token.content.length
+      content += token.content
       i++
 
       if (tokenStyleMode !== 'class')
@@ -405,13 +374,10 @@ function lineSignature(
         break
     }
 
-    hash = hashSignaturePart(hash, `\u0001${segmentLength}\u0002`)
-    hash2 = hashSignaturePart2(hash2, `\u0001${segmentLength}\u0002`)
-    totalLength += segmentLength
-    segmentCount++
+    parts.push(style, content.length, content)
   }
 
-  return `${lineNumberKey}:${segmentCount}:${totalLength}:${hash.toString(36)}:${hash2.toString(36)}`
+  return JSON.stringify(parts)
 }
 
 /**

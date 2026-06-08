@@ -124,6 +124,33 @@ describe('renderCodeWithTokens', () => {
     expect(ssrHtml).not.toContain('class="smd-token-')
   })
 
+  it('does not collide HTML cache keys when public inputs contain the separator', () => {
+    const highlighter = {
+      codeToThemedTokens(code: string, lang: string, theme: string) {
+        return [[{
+          content: `${lang}:${theme}:${code}`,
+        }]]
+      },
+    }
+
+    const html1 = renderCodeWithTokens(highlighter as any, 'same', {
+      lang: 'a',
+      theme: 'b\u0001c',
+      htmlCache: true,
+      tokenCache: false,
+    })
+    const html2 = renderCodeWithTokens(highlighter as any, 'same', {
+      lang: 'a\u0001b',
+      theme: 'c',
+      htmlCache: true,
+      tokenCache: false,
+    })
+
+    expect(html1).toContain('a:b\u0001c:same')
+    expect(html2).toContain('a\u0001b:c:same')
+    expect(html2).not.toBe(html1)
+  })
+
   it('uses class token mode with an explicit document styleRoot even without a global document', () => {
     const originalDocument = (globalThis as any).document
     const styleRoot = createDocumentStub()

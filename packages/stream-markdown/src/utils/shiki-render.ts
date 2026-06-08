@@ -94,7 +94,19 @@ export function renderCodeWithTokens(
     // ignore
   }
   const safeBg = normalizeCssColor(bg)
-  const cacheKey = `${tokenStyleMode}-token-style\u0001${safeBg}\u0001${lang}\u0001${theme}\u0001${preClass}\u0001${codeClass}\u0001${lineClass}\u0001${showLineNumbers ? 1 : 0}\u0001${startingLineNumber}\u0001${code}`
+  const cacheKey = JSON.stringify([
+    'stream-markdown-html-v2',
+    tokenStyleMode,
+    safeBg,
+    lang,
+    theme,
+    preClass,
+    codeClass,
+    lineClass,
+    showLineNumbers,
+    startingLineNumber,
+    code,
+  ])
   const canUseHtmlCache = opts.tokenLines == null
   if (canUseHtmlCache) {
     const cachedHtml = getCachedHtml(highlighter, cacheKey, {

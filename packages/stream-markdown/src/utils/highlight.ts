@@ -52,8 +52,6 @@ const pendingLangs = new Set<string>()
 let pendingThemes: HighlightTheme[] = []
 const loadedLangs = new Set<string>()
 const loadedBundledThemes = new Set<string>()
-const loadedNamedThemeObjects = new Map<string, object>()
-let loadedAnonymousThemeObjects = new WeakSet<object>()
 let applyPromise: Promise<void> = Promise.resolve()
 let highlighterGeneration = 0
 
@@ -74,39 +72,21 @@ function isThemeObject(theme: HighlightTheme): theme is HighlightTheme & object 
 }
 
 function isThemeLoaded(theme: HighlightTheme): boolean {
-  const id = getThemeId(theme)
-
-  if (typeof theme === 'string')
-    return loadedBundledThemes.has(theme) && !loadedNamedThemeObjects.has(theme)
-
-  if (!isThemeObject(theme))
-    return false
-
-  if (id)
-    return loadedNamedThemeObjects.get(id) === theme
-
-  return loadedAnonymousThemeObjects.has(theme)
+  return typeof theme === 'string' && loadedBundledThemes.has(theme)
 }
 
 function markThemeLoaded(theme: HighlightTheme): void {
-  const id = getThemeId(theme)
-
   if (typeof theme === 'string') {
     loadedBundledThemes.add(theme)
-    loadedNamedThemeObjects.delete(theme)
     return
   }
 
   if (!isThemeObject(theme))
     return
 
-  if (id) {
-    loadedNamedThemeObjects.set(id, theme)
+  const id = getThemeId(theme)
+  if (id)
     loadedBundledThemes.delete(id)
-    return
-  }
-
-  loadedAnonymousThemeObjects.add(theme)
 }
 
 function markInitialLoaded(langs: string[], themes: HighlightTheme[]) {
@@ -353,7 +333,5 @@ export function disposeHighlighter() {
   pendingThemes = []
   loadedLangs.clear()
   loadedBundledThemes.clear()
-  loadedNamedThemeObjects.clear()
-  loadedAnonymousThemeObjects = new WeakSet<object>()
   applyPromise = Promise.resolve()
 }

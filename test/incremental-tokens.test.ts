@@ -1019,6 +1019,27 @@ describe('updateCodeTokensIncremental', () => {
     expect(container.querySelectorAll('code .next-line')).toHaveLength(1)
   })
 
+  it('does not collide render signatures when public options contain the separator', () => {
+    updateSourceCodeTokensIncremental(container, hl as any, 'same', {
+      lang: 'a',
+      theme: 'b\u0001c',
+      preClass: 'pre',
+      codeClass: '',
+      lineClass: 'line',
+    })
+
+    const result = updateSourceCodeTokensIncremental(container, hl as any, 'same', {
+      lang: 'a\u0001b',
+      theme: 'c',
+      preClass: 'pre',
+      codeClass: '',
+      lineClass: 'line',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code')?.textContent).toBe('same')
+  })
+
   it('forces a full render when the same theme name resolves to a different background', () => {
     let bg = '#000000'
     const dynamicBgHl = {
