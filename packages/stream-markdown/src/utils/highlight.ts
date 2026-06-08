@@ -426,6 +426,8 @@ async function loadPendingIntoHighlighter(
   pendingThemes = []
 
   let didMutateHighlighter = false
+  let didAttemptHighlighterMutation = false
+  let invalidatedAfterFailure = false
   let langIndex = 0
   let themeIndex = 0
 
@@ -436,6 +438,7 @@ async function loadPendingIntoHighlighter(
         if (loadedLangs.has(l))
           continue
 
+        didAttemptHighlighterMutation = true
         await callHighlighterMutation(targetHighlighter, 'loadLanguage', l)
         if (!isCurrentHighlighterInstance(targetHighlighter, generation))
           return
@@ -450,6 +453,7 @@ async function loadPendingIntoHighlighter(
         if (isThemeLoaded(t))
           continue
 
+        didAttemptHighlighterMutation = true
         await callHighlighterMutation(targetHighlighter, 'loadTheme', t)
         if (!isCurrentHighlighterInstance(targetHighlighter, generation))
           return
@@ -463,6 +467,11 @@ async function loadPendingIntoHighlighter(
     if (!isCurrentHighlighterInstance(targetHighlighter, generation))
       return
 
+    if (didAttemptHighlighterMutation) {
+      invalidateHighlighterCaches(targetHighlighter)
+      invalidatedAfterFailure = true
+    }
+
     const remainingLangs = langs.slice(langIndex)
     const remainingThemes = themes.slice(themeIndex)
 
@@ -475,7 +484,11 @@ async function loadPendingIntoHighlighter(
     throw error
   }
   finally {
-    if (didMutateHighlighter && isCurrentHighlighterInstance(targetHighlighter, generation)) {
+    if (
+      didMutateHighlighter
+      && !invalidatedAfterFailure
+      && isCurrentHighlighterInstance(targetHighlighter, generation)
+    ) {
       invalidateHighlighterCaches(targetHighlighter)
     }
   }

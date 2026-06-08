@@ -68,6 +68,65 @@ describe('registerHighlight', () => {
     }
   })
 
+  it('invalidates caches when registerHighlight loadTheme mutates before rejecting', async () => {
+    vi.resetModules()
+
+    const theme1 = { name: 'partial-failure-theme', color: '#ff0000' }
+    const theme2 = { name: 'partial-failure-theme', color: '#0000ff' }
+    let color = ''
+
+    const highlighter = {
+      codeToThemedTokens(code: string) {
+        return code.split('\n').map(line => [{ content: line, color }])
+      },
+      async loadTheme(theme: typeof theme1) {
+        color = theme.color
+
+        if (theme === theme2)
+          throw new Error('partial theme failure')
+      },
+      async loadLanguage() {},
+    }
+
+    vi.doMock('shiki', () => ({
+      createHighlighter: vi.fn(async ({ themes }: { themes: Array<typeof theme1> }) => {
+        for (const theme of themes)
+          await highlighter.loadTheme(theme)
+        return highlighter
+      }),
+    }))
+
+    try {
+      const { disposeHighlighter, registerHighlight } = await import('../packages/stream-markdown/src/utils/highlight.js')
+      const { renderCodeWithTokens } = await import('../packages/stream-markdown/src/utils/shiki-render.js')
+
+      const hl = await registerHighlight({ langs: ['ts'], themes: [theme1 as any] })
+      const opts = {
+        lang: 'ts',
+        theme: 'partial-failure-theme',
+        tokenStyleMode: 'inline' as const,
+        htmlCache: true,
+        tokenCache: true,
+      }
+
+      expect(renderCodeWithTokens(hl as any, 'const a = 1', opts))
+        .toContain('color: #ff0000;')
+
+      await expect(registerHighlight({ langs: ['ts'], themes: [theme2 as any] }))
+        .rejects
+        .toThrow('partial theme failure')
+
+      expect(renderCodeWithTokens(hl as any, 'const a = 1', opts))
+        .toContain('color: #0000ff;')
+
+      disposeHighlighter()
+    }
+    finally {
+      vi.doUnmock('shiki')
+      vi.resetModules()
+    }
+  })
+
   it('reloads a same-name object theme after a string theme with that id was loaded', async () => {
     vi.resetModules()
 
