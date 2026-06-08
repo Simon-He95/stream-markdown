@@ -1,4 +1,5 @@
 export type TokenStyleMode = 'inline' | 'class'
+export type TokenStyleModeOption = TokenStyleMode | 'auto'
 
 const SIMPLE_COLOR_RE = /^#(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i
 const COLOR_KEYWORD_RE = /^[a-z][a-z0-9-]*$/i
@@ -238,7 +239,7 @@ export function getTokenClassAttr(color?: string, fontStyle?: number): string {
 export function getTokenStyleAttr(
   color?: string,
   fontStyle?: number,
-  mode: TokenStyleMode = typeof document === 'undefined' ? 'inline' : 'class',
+  mode: TokenStyleMode = 'inline',
 ): string {
   if (mode === 'class')
     return getTokenClassAttr(color, fontStyle)
@@ -249,7 +250,7 @@ export function applyTokenStyleToElement(
   element: HTMLElement,
   color?: string,
   fontStyle?: number,
-  mode: TokenStyleMode = typeof document === 'undefined' ? 'inline' : 'class',
+  mode: TokenStyleMode = 'inline',
 ): void {
   const style = tokenStyle(color, fontStyle)
   if (!style)
@@ -304,6 +305,22 @@ function resolveStyleRoot(target?: Node | null): TokenStyleRoot | null {
 
 export function canUseTokenStyleClasses(target?: Node | null): boolean {
   return resolveStyleRoot(target) != null
+}
+
+export function resolveTokenStyleMode(
+  requested: TokenStyleModeOption | undefined,
+  target?: Node | null,
+  defaultMode: TokenStyleMode = 'inline',
+): TokenStyleMode {
+  const mode = requested ?? defaultMode
+
+  if (mode === 'auto')
+    return canUseTokenStyleClasses(target) ? 'class' : 'inline'
+
+  if (mode === 'class')
+    return canUseTokenStyleClasses(target) ? 'class' : 'inline'
+
+  return 'inline'
 }
 
 function getRootDocument(root: TokenStyleRoot): Document {

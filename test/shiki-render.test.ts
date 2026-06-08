@@ -103,6 +103,7 @@ describe('renderCodeWithTokens', () => {
         theme: 'vitesse-dark',
         htmlCache: true,
         styleRoot,
+        tokenStyleMode: 'class',
       })
 
       expect(domHtml).toContain('class="smd-token-')

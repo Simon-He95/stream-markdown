@@ -1,16 +1,16 @@
 import type { Highlighter } from 'shiki'
 import type { RenderOptions, ThemedToken } from './shiki-render.js'
-import type { TokenStyleMode } from './token-style.js'
+import type { TokenStyleMode, TokenStyleModeOption } from './token-style.js'
 import { getHighlighterRevision } from './highlighter-revision.js'
 import { renderCodeWithTokens } from './shiki-render.js'
 import { getTokenLines } from './token-cache.js'
 import {
   applyTokenStyleToElement,
-  canUseTokenStyleClasses,
   ensureTokenStyleSheet,
   getTokenStyleAttr,
   getTokenStyleSignature,
   normalizeCssColor,
+  resolveTokenStyleMode,
 } from './token-style.js'
 
 export type UpdateResult = 'incremental' | 'full' | 'noop'
@@ -218,13 +218,10 @@ function getIncrementalStyleRoot(opts: { styleRoot?: Node | null }, container: H
 }
 
 function resolveIncrementalTokenStyleMode(
-  opts: { tokenStyleMode?: TokenStyleMode },
+  opts: { tokenStyleMode?: TokenStyleModeOption },
   styleRoot: Node | null,
 ): TokenStyleMode {
-  const requested = opts.tokenStyleMode ?? 'class'
-  return requested === 'class' && canUseTokenStyleClasses(styleRoot)
-    ? 'class'
-    : 'inline'
+  return resolveTokenStyleMode(opts.tokenStyleMode, styleRoot, 'class')
 }
 
 function ensureIncrementalTokenStyleSheet(styleRoot: Node | null, tokenStyleMode: TokenStyleMode): void {
@@ -903,6 +900,17 @@ interface ScheduledTask {
 
 type IdleHandle = number | ReturnType<typeof setTimeout>
 
+function getIntersectionObserverConstructor(): typeof IntersectionObserver | null {
+  const win = typeof window !== 'undefined' ? (window as any) : null
+  if (typeof win?.IntersectionObserver === 'function')
+    return win.IntersectionObserver
+
+  const globalScope = globalThis as any
+  return typeof globalScope.IntersectionObserver === 'function'
+    ? globalScope.IntersectionObserver
+    : null
+}
+
 class TokenUpdateScheduler {
   private queue: ScheduledTask[] = []
   private byContainer = new WeakMap<HTMLElement, ScheduledTask>()
@@ -916,11 +924,16 @@ class TokenUpdateScheduler {
 
   constructor() {
     try {
-      this.io = new IntersectionObserver((entries) => {
-        for (const e of entries) {
-          this.visible.set(e.target as HTMLElement, e.isIntersecting)
-        }
-      }, { root: null, threshold: 0 })
+      const IntersectionObserverCtor = getIntersectionObserverConstructor()
+      if (IntersectionObserverCtor) {
+        this.io = new IntersectionObserverCtor((entries) => {
+          for (const e of entries)
+            this.visible.set(e.target as HTMLElement, e.isIntersecting)
+        }, { root: null, threshold: 0 })
+      }
+      else {
+        this.io = null
+      }
     }
     catch {
       this.io = null

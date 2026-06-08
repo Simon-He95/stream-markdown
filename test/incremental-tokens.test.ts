@@ -211,6 +211,58 @@ describe('updateCodeTokensIncremental', () => {
     }
   })
 
+  it('uses window.IntersectionObserver when global IntersectionObserver is absent', async () => {
+    vi.resetModules()
+
+    const origGlobalIO = (globalThis as any).IntersectionObserver
+    const origWindowIO = (window as any).IntersectionObserver
+    const origRic = (window as any).requestIdleCallback
+    const observe = vi.fn()
+
+    delete (globalThis as any).IntersectionObserver
+
+    class MockIntersectionObserver {
+      observe = observe
+      unobserve = vi.fn()
+    }
+
+    ;(window as any).IntersectionObserver = MockIntersectionObserver
+    ;(window as any).requestIdleCallback = (cb: IdleRequestCallback) => {
+      return window.setTimeout(() => cb({ timeRemaining: () => 999, didTimeout: true }), 0)
+    }
+
+    try {
+      const { createScheduledTokenIncrementalUpdater } = await import('../packages/stream-markdown/src/utils/incremental-tokens.js')
+      const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+      })
+
+      updater.update('scheduled')
+      expect(observe).toHaveBeenCalledWith(container)
+
+      updater.dispose()
+    }
+    finally {
+      if (origGlobalIO === undefined)
+        delete (globalThis as any).IntersectionObserver
+      else
+        (globalThis as any).IntersectionObserver = origGlobalIO
+
+      if (origWindowIO === undefined)
+        delete (window as any).IntersectionObserver
+      else
+        (window as any).IntersectionObserver = origWindowIO
+
+      if (origRic === undefined)
+        delete (window as any).requestIdleCallback
+      else
+        (window as any).requestIdleCallback = origRic
+
+      vi.resetModules()
+    }
+  })
+
   it('renders token styles with classes instead of inline styles', () => {
     updateCodeTokensIncremental(container, coloredHl as any, 'const', {
       lang: 'ts',
@@ -403,6 +455,7 @@ describe('updateCodeTokensIncremental', () => {
       theme: 'vitesse-dark',
       htmlCache: true,
       styleRoot: document,
+      tokenStyleMode: 'class' as const,
     }
 
     const html1 = renderCodeWithTokens(coloredHl as any, 'const a = 1', opts)
@@ -441,10 +494,22 @@ describe('updateCodeTokensIncremental', () => {
     expect(styleEl.textContent).toContain('color: #ff0000;')
   })
 
-  it('uses class token styles by default in a DOM environment', () => {
+  it('uses inline token styles by default for direct string rendering', () => {
     const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
       lang: 'ts',
       theme: 'vitesse-dark',
+    })
+
+    expect(html).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')
+    expect(html).not.toContain('class="smd-token-')
+    expect(document.head.querySelector('style[data-stream-markdown-token-styles]')).toBeNull()
+  })
+
+  it('uses class token styles for direct string rendering when requested', () => {
+    const html = renderCodeWithTokens(coloredHl as any, 'const a = 1', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'class',
     })
 
     expect(html).toContain('class="smd-token-')
@@ -458,6 +523,7 @@ describe('updateCodeTokensIncremental', () => {
       lang: 'ts',
       theme: 'vitesse-dark',
       styleRoot: undefined,
+      tokenStyleMode: 'class',
     })
 
     expect(html).toContain('class="smd-token-')
@@ -471,6 +537,7 @@ describe('updateCodeTokensIncremental', () => {
       lang: 'ts',
       theme: 'vitesse-dark',
       styleRoot: null,
+      tokenStyleMode: 'class',
     })
 
     expect(html).toContain('style="color: #ff0000;font-style: italic; font-weight: 600;"')

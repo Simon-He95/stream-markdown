@@ -1,9 +1,9 @@
 import type { Highlighter } from 'shiki'
-import type { TokenStyleMode } from './token-style.js'
+import type { TokenStyleMode, TokenStyleModeOption } from './token-style.js'
 import { getHighlighterRevision } from './highlighter-revision.js'
 import { getCachedHtml, setCachedHtml } from './html-cache.js'
 import { getTokenLines } from './token-cache.js'
-import { canUseTokenStyleClasses, ensureTokenStyleSheet, getTokenStyleAttr, normalizeCssColor } from './token-style.js'
+import { ensureTokenStyleSheet, getTokenStyleAttr, normalizeCssColor, resolveTokenStyleMode } from './token-style.js'
 
 export interface RenderOptions {
   lang: string
@@ -19,7 +19,7 @@ export interface RenderOptions {
   htmlCacheMaxEntries?: number
   tokenLines?: ThemedToken[][]
   styleRoot?: Node | null
-  tokenStyleMode?: TokenStyleMode
+  tokenStyleMode?: TokenStyleModeOption
 }
 
 export interface ThemedToken {
@@ -88,10 +88,7 @@ export function renderCodeWithTokens(
   const { lang, theme, preClass = 'shiki', codeClass = '', lineClass = 'line', showLineNumbers = false, startingLineNumber: rawStartingLineNumber = 1 } = opts
   const startingLineNumber = normalizeStartingLineNumber(rawStartingLineNumber)
   const styleRoot = getRenderStyleRoot(opts)
-  const requestedTokenStyleMode: TokenStyleMode = opts.tokenStyleMode ?? 'class'
-  const tokenStyleMode: TokenStyleMode = requestedTokenStyleMode === 'class' && canUseTokenStyleClasses(styleRoot)
-    ? 'class'
-    : 'inline'
+  const tokenStyleMode: TokenStyleMode = resolveTokenStyleMode(opts.tokenStyleMode, styleRoot, 'inline')
   let bg: string | undefined
   try {
     const themeObj = (highlighter as any).getTheme?.(theme)
