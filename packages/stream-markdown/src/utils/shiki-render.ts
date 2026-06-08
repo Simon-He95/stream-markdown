@@ -1,5 +1,6 @@
 import type { Highlighter } from 'shiki'
 import type { TokenStyleMode } from './token-style.js'
+import { getHighlighterRevision } from './highlighter-revision.js'
 import { getCachedHtml, setCachedHtml } from './html-cache.js'
 import { getTokenLines } from './token-cache.js'
 import { canUseTokenStyleClasses, ensureTokenStyleSheet, getTokenStyleAttr, normalizeCssColor } from './token-style.js'
@@ -95,7 +96,8 @@ export function renderCodeWithTokens(
   }
   const safeBg = normalizeCssColor(bg)
   const cacheKey = JSON.stringify([
-    'stream-markdown-html-v2',
+    'stream-markdown-html-v3',
+    getHighlighterRevision(highlighter),
     tokenStyleMode,
     safeBg,
     lang,

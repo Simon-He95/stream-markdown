@@ -73,34 +73,77 @@ function isThemeObject(theme: HighlightTheme): theme is HighlightTheme & object 
   return !!theme && typeof theme === 'object'
 }
 
+interface ThemeFingerprintMarker {
+  __streamMarkdownType: string
+  value?: string
+}
+
 type ThemeFingerprintValue
   = | null
     | boolean
     | number
     | string
+    | ThemeFingerprintMarker
     | ThemeFingerprintValue[]
     | { [key: string]: ThemeFingerprintValue }
 
-function normalizeThemeFingerprint(value: unknown): ThemeFingerprintValue {
-  if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string')
+function themeFingerprintMarker(type: string, value?: string): ThemeFingerprintMarker {
+  return value === undefined
+    ? { __streamMarkdownType: type }
+    : { __streamMarkdownType: type, value }
+}
+
+function normalizeThemeFingerprint(
+  value: unknown,
+  seen = new WeakSet<object>(),
+): ThemeFingerprintValue {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string')
     return value
 
-  if (Array.isArray(value))
-    return value.map(normalizeThemeFingerprint)
+  if (typeof value === 'number')
+    return Number.isFinite(value) ? value : themeFingerprintMarker('number', String(value))
 
-  const input = value as Record<string, unknown>
-  const output: { [key: string]: ThemeFingerprintValue } = {}
+  if (typeof value === 'undefined')
+    return themeFingerprintMarker('undefined')
 
-  for (const key of Object.keys(input).sort())
-    output[key] = normalizeThemeFingerprint(input[key])
+  if (typeof value === 'bigint')
+    return themeFingerprintMarker('bigint', value.toString())
 
-  return output
+  if (typeof value === 'symbol')
+    return themeFingerprintMarker('symbol', String(value))
+
+  if (typeof value === 'function')
+    return themeFingerprintMarker('function', value.name || '')
+
+  if (typeof value !== 'object')
+    return themeFingerprintMarker(typeof value)
+
+  if (seen.has(value))
+    return themeFingerprintMarker('circular')
+
+  seen.add(value)
+  try {
+    if (Array.isArray(value))
+      return value.map(item => normalizeThemeFingerprint(item, seen))
+
+    const input = value as Record<string, unknown>
+    const output: { [key: string]: ThemeFingerprintValue } = {}
+
+    for (const key of Object.keys(input).sort())
+      output[key] = normalizeThemeFingerprint(input[key], seen)
+
+    return output
+  }
+  finally {
+    seen.delete(value)
+  }
 }
 
 function getThemeFingerprint(theme: HighlightTheme): string | undefined {
-  return isThemeObject(theme)
-    ? JSON.stringify(normalizeThemeFingerprint(theme))
-    : undefined
+  if (!isThemeObject(theme))
+    return undefined
+
+  return JSON.stringify(normalizeThemeFingerprint(theme))
 }
 
 function getLoadedObjectThemeFingerprint(theme: HighlightTheme): string | undefined {
@@ -198,7 +241,10 @@ function addPendingThemes(themes: HighlightTheme[]) {
     if (id) {
       const existingIndex = findPendingThemeIndexById(id)
       if (existingIndex !== -1) {
-        pendingThemes[existingIndex] = theme
+        if (isThemeLoaded(theme))
+          pendingThemes.splice(existingIndex, 1)
+        else
+          pendingThemes[existingIndex] = theme
         continue
       }
     }

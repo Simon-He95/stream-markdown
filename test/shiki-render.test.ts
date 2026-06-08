@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
+import { bumpHighlighterRevision } from '../packages/stream-markdown/src/utils/highlighter-revision.js'
 import { renderCodeWithTokens } from '../packages/stream-markdown/src/utils/shiki-render.js'
 
 const coloredHl = {
@@ -148,6 +149,63 @@ describe('renderCodeWithTokens', () => {
 
     expect(html1).toContain('a:b\u0001c:same')
     expect(html2).toContain('a\u0001b:c:same')
+    expect(html2).not.toBe(html1)
+  })
+
+  it('does not collide token cache keys when public inputs contain the separator', () => {
+    const highlighter = {
+      codeToThemedTokens(code: string, lang: string, theme: string) {
+        return [[{
+          content: `${lang}:${theme}:${code}`,
+        }]]
+      },
+    }
+    const sep = '\u0001'
+
+    const html1 = renderCodeWithTokens(highlighter as any, 'same', {
+      lang: 'a',
+      theme: `b${sep}c`,
+      htmlCache: false,
+      tokenCache: true,
+    })
+    const html2 = renderCodeWithTokens(highlighter as any, 'same', {
+      lang: `a${sep}b`,
+      theme: 'c',
+      htmlCache: false,
+      tokenCache: true,
+    })
+
+    expect(html1).toContain(`a:b${sep}c:same`)
+    expect(html2).toContain(`a${sep}b:c:same`)
+    expect(html2).not.toBe(html1)
+  })
+
+  it('does not reuse cached HTML or tokens after highlighter revision changes', () => {
+    let color = '#ff0000'
+    const highlighter = {
+      codeToThemedTokens(code: string) {
+        return code.split('\n').map(line => [{
+          content: line,
+          color,
+          fontStyle: 0,
+        }])
+      },
+    }
+
+    const opts = {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      htmlCache: true,
+      tokenCache: true,
+    }
+
+    const html1 = renderCodeWithTokens(highlighter as any, 'const a = 1', opts)
+    color = '#0000ff'
+    bumpHighlighterRevision(highlighter as any)
+    const html2 = renderCodeWithTokens(highlighter as any, 'const a = 1', opts)
+
+    expect(html1).toContain('color: #ff0000;')
+    expect(html2).toContain('color: #0000ff;')
     expect(html2).not.toBe(html1)
   })
 

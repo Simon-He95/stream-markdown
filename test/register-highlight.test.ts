@@ -433,4 +433,52 @@ describe('registerHighlight', () => {
       vi.resetModules()
     }
   })
+
+  it('does not throw when custom theme fingerprints contain unsupported values', async () => {
+    vi.resetModules()
+
+    const theme: any = {
+      name: 'theme-with-unsupported-values',
+      color: '#ff0000',
+      optional: undefined,
+      big: BigInt(1),
+      fn() {},
+      sym: Symbol('theme'),
+      settings: [
+        {
+          scope: undefined,
+          foreground: '#ff0000',
+        },
+      ],
+    }
+    theme.self = theme
+
+    const highlighter = {
+      async loadTheme() {},
+      async loadLanguage() {},
+    }
+
+    vi.doMock('shiki', () => ({
+      createHighlighter: vi.fn(async ({ themes }: { themes: Array<typeof theme> }) => {
+        for (let i = 0; i < themes.length; i++)
+          await highlighter.loadTheme()
+        return highlighter
+      }),
+    }))
+
+    try {
+      const { disposeHighlighter, registerHighlight } = await import('../packages/stream-markdown/src/utils/highlight.js')
+
+      await expect(registerHighlight({
+        langs: ['ts'],
+        themes: [theme],
+      })).resolves.toBe(highlighter)
+
+      disposeHighlighter()
+    }
+    finally {
+      vi.doUnmock('shiki')
+      vi.resetModules()
+    }
+  })
 })
