@@ -514,6 +514,41 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     }
   })
 
+  it('uses a tokenLines snapshot when throttled scheduled rendering is delayed', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const results: string[] = []
+    const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      tokenStyleMode: 'inline',
+      throttleMs: 1,
+      onResult: result => results.push(result),
+    })
+
+    const tokenLines = [[{
+      content: 'a',
+      color: '#ff0000',
+      fontStyle: 0,
+    }]]
+
+    updater.update('a', tokenLines)
+
+    tokenLines[0][0].content = 'b'
+    tokenLines[0][0].color = '#0000ff'
+
+    await new Promise(resolve => setTimeout(resolve, 10))
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(results).toEqual(['full'])
+    expect(container.querySelector('code')?.textContent).toBe('a')
+    expect((container.querySelector('code .line span') as HTMLElement).getAttribute('style'))
+      .toContain('color: #ff0000;')
+
+    updater.dispose()
+  })
+
   it('resets the throttle window from the latest update', async () => {
     const origGlobalRIC = (globalThis as any).requestIdleCallback
     const origWindowRIC = (window as any).requestIdleCallback

@@ -366,6 +366,38 @@ describe('registerHighlight', () => {
     }
   })
 
+  it('disposes the active highlighter when disposeHighlighter is called', async () => {
+    vi.resetModules()
+
+    const dispose = vi.fn()
+    const highlighter = {
+      dispose,
+      async loadTheme() {},
+      async loadLanguage() {},
+    }
+
+    vi.doMock('shiki', () => ({
+      createHighlighter: vi.fn(async () => highlighter),
+    }))
+
+    try {
+      const { disposeHighlighter, registerHighlight } = await import('../packages/stream-markdown/src/utils/highlight.js')
+
+      await registerHighlight({
+        langs: ['ts'],
+        themes: ['vitesse-dark'] as any,
+      })
+
+      disposeHighlighter()
+
+      expect(dispose).toHaveBeenCalledTimes(1)
+    }
+    finally {
+      vi.doUnmock('shiki')
+      vi.resetModules()
+    }
+  })
+
   it('does not let an in-flight load on a disposed highlighter mark future requests as loaded', async () => {
     vi.resetModules()
 

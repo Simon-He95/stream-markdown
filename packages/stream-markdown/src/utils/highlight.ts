@@ -61,6 +61,17 @@ function isCurrentHighlighterInstance(instance: Highlighter, generation: number)
   return highlighterGeneration === generation && highlighter === instance
 }
 
+function disposeHighlighterInstance(instance: Highlighter): void {
+  try {
+    const result = (instance as any).dispose?.()
+    if (result && typeof result.catch === 'function')
+      result.catch(() => undefined)
+  }
+  catch {
+    // Best-effort cleanup. Disposing should not make global state reset fail.
+  }
+}
+
 function getThemeId(theme: HighlightTheme): string | undefined {
   if (typeof theme === 'string')
     return theme
@@ -394,7 +405,7 @@ export async function registerHighlight(options: {
         langs: initialLangs,
       })
       if (creationGeneration !== highlighterGeneration) {
-        ;(h as any).dispose?.()
+        disposeHighlighterInstance(h)
         return h
       }
 
@@ -429,13 +440,18 @@ export async function registerHighlight(options: {
 
 export function disposeHighlighter() {
   highlighterGeneration++
-  if (highlighter) {
-    clearHighlighterRevision(highlighter)
-    clearTokenCache(highlighter)
-    clearHtmlCache(highlighter)
-  }
+
+  const currentHighlighter = highlighter
   highlighter = null
   highlighterPromise = null
+
+  if (currentHighlighter) {
+    clearHighlighterRevision(currentHighlighter)
+    clearTokenCache(currentHighlighter)
+    clearHtmlCache(currentHighlighter)
+    disposeHighlighterInstance(currentHighlighter)
+  }
+
   pendingLangs.clear()
   pendingThemes = []
   loadedLangs.clear()

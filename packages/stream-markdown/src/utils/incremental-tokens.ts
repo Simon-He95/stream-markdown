@@ -46,6 +46,10 @@ function normalizeTokenLinesForCode(
   return lines
 }
 
+function cloneTokenLines(tokenLines: ThemedToken[][] | undefined): ThemedToken[][] | undefined {
+  return tokenLines?.map(line => line.map(token => ({ ...token })))
+}
+
 function normalizeStartingLineNumber(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value))
     return 1
@@ -934,7 +938,7 @@ class TokenUpdateScheduler {
       prev.code = code
       prev.highlighter = highlighter
       prev.opts = opts
-      prev.tokenLines = tokenLines
+      prev.tokenLines = cloneTokenLines(tokenLines)
       prev.estNodes = estimateNodeCost(code)
       prev.shouldRun = shouldRun
       return prev.id
@@ -946,7 +950,7 @@ class TokenUpdateScheduler {
       highlighter,
       code,
       opts,
-      tokenLines,
+      tokenLines: cloneTokenLines(tokenLines),
       estNodes: estimateNodeCost(code),
       shouldRun,
     }
@@ -1340,7 +1344,7 @@ export function createScheduledTokenIncrementalUpdater(
       updateGeneration++
       cancelScheduledTask()
       pendingCode = code
-      pendingTokenLines = tokenLines
+      pendingTokenLines = cloneTokenLines(tokenLines)
       scheduleFlush()
       // Synchronous return is 'noop' since actual rendering will occur later
       return 'noop'
