@@ -143,13 +143,26 @@ function wrapHighlighterMutationMethods(instance: Highlighter): void {
 
     originals[name] = original
     anyHl[name] = (...args: any[]) => {
-      const result = original.apply(instance, args)
+      let result: any
+      try {
+        result = original.apply(instance, args)
+      }
+      catch (error) {
+        invalidateHighlighterCaches(instance)
+        throw error
+      }
 
       if (result && typeof result.then === 'function') {
-        return result.then((value: unknown) => {
-          completeHighlighterMutation(instance, name, args)
-          return value
-        })
+        return result.then(
+          (value: unknown) => {
+            completeHighlighterMutation(instance, name, args)
+            return value
+          },
+          (error: unknown) => {
+            invalidateHighlighterCaches(instance)
+            throw error
+          },
+        )
       }
 
       completeHighlighterMutation(instance, name, args)

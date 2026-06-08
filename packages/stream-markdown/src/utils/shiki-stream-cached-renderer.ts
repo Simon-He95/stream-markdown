@@ -223,6 +223,16 @@ export function createShikiStreamCachedRenderer(
     tokenizerRevision = -1
   }
 
+  const isStaleTokenizerResult = (
+    activeTokenizer: ShikiStreamTokenizer,
+    activeRevision: number,
+  ) => {
+    return disposed
+      || tokenizer !== activeTokenizer
+      || tokenizerRevision !== activeRevision
+      || getCurrentHighlighterRevision() !== activeRevision
+  }
+
   const cancelPendingRender = () => {
     renderJobSeq++
     if (cancelScheduledRender) {
@@ -317,6 +327,14 @@ export function createShikiStreamCachedRenderer(
     }, priority)
   }
 
+  const scheduleRetokenizeFallback = (code: string) => {
+    if (disposed)
+      return
+    resetTokenizer()
+    clearTokenBuffer()
+    scheduleRender(code)
+  }
+
   const normalizeCodeText = (value: string) => value.replace(/\r/g, '')
 
   const getBufferedCodeText = () => {
@@ -393,9 +411,13 @@ export function createShikiStreamCachedRenderer(
     }
 
     const chunk = canAppend ? code.slice(prevCode.length) : code
-    const { stable, unstable, recall } = await tokenizer.enqueue(chunk)
-    if (disposed)
+    const activeTokenizer = tokenizer
+    const activeRevision = tokenizerRevision
+    const { stable, unstable, recall } = await activeTokenizer.enqueue(chunk)
+    if (isStaleTokenizerResult(activeTokenizer, activeRevision)) {
+      scheduleRetokenizeFallback(code)
       return
+    }
 
     if (canAppend && recall > 0)
       tokenBuffer.splice(Math.max(0, tokenBuffer.length - recall))
@@ -403,7 +425,7 @@ export function createShikiStreamCachedRenderer(
       clearTokenBuffer()
 
     tokenBuffer.push(...(stable ?? []), ...(unstable ?? []))
-    tokenBufferRevision = getCurrentHighlighterRevision()
+    tokenBufferRevision = activeRevision
     scheduleBufferedRender(code)
   })
 
@@ -432,11 +454,16 @@ export function createShikiStreamCachedRenderer(
     const activeTokenizer = tokenizer as ShikiStreamTokenizer | null
     if (disposed || !activeTokenizer || !updater)
       return
+
+    const activeRevision = tokenizerRevision
     const { stable, unstable } = await activeTokenizer.enqueue(currentCode)
-    if (disposed)
+    if (isStaleTokenizerResult(activeTokenizer, activeRevision)) {
+      scheduleRetokenizeFallback(currentCode)
       return
+    }
+
     tokenBuffer = [...(stable ?? []), ...(unstable ?? [])]
-    tokenBufferRevision = getCurrentHighlighterRevision()
+    tokenBufferRevision = activeRevision
     scheduleBufferedRender(currentCode)
   })
 

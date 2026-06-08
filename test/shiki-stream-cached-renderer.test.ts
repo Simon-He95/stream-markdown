@@ -309,6 +309,51 @@ describe('createShikiStreamCachedRenderer', () => {
     renderer.dispose()
   })
 
+  it('does not render tokenizer output from an older highlighter revision', async () => {
+    highlightMock.state.tokenColor = '#ff0000'
+
+    let resolveTokens!: (value: any) => void
+    shikiStreamMock.enqueueResults.push(
+      () => new Promise((resolve) => {
+        resolveTokens = resolve
+      }),
+    )
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const renderer = createShikiStreamCachedRenderer(container, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      scheduleInRaf: false,
+      throttleMs: 0,
+      tokenStyleMode: 'inline',
+    })
+
+    const update = renderer.updateCode('const a = 1')
+    await new Promise(r => setTimeout(r, 0))
+
+    highlightMock.state.tokenColor = '#0000ff'
+    bumpHighlighterRevision(highlightMock.highlighter as any)
+
+    resolveTokens({
+      recall: 0,
+      stable: [{
+        content: 'const a = 1',
+        color: '#ff0000',
+        fontStyle: 0,
+      }],
+      unstable: [],
+    })
+    await update
+    await new Promise(r => setTimeout(r, 0))
+
+    expect((container.querySelector('code .line span') as HTMLElement).getAttribute('style'))
+      .toContain('color: #0000ff;')
+
+    renderer.dispose()
+  })
+
   it('does not leave stale earlier lines when appendOnlyFastPath is requested and tokenizer recalls tokens', async () => {
     shikiStreamMock.enqueueResults.push(
       {
