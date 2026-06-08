@@ -215,10 +215,16 @@ function previousCodeLines(code: string): string[] {
   return code.replace(/\r/g, '').split('\n')
 }
 
+function hasExpectedLineElementShell(line: HTMLElement, lineClass: string): boolean {
+  return line.tagName.toLowerCase() === 'span'
+    && getClassAttribute(line) === lineClass
+}
+
 function hasExpectedCodeLineStructure(
   codeEl: HTMLElement,
   oldLines: HTMLElement[],
   prevCode: string,
+  lineClass: string,
 ): boolean {
   const expectedLines = previousCodeLines(prevCode)
 
@@ -230,7 +236,11 @@ function hasExpectedCodeLineStructure(
     return false
 
   for (let i = 0; i < oldLines.length; i++) {
-    if ((oldLines[i].textContent ?? '').replace(/\r/g, '') !== expectedLines[i])
+    const oldLine = oldLines[i]
+
+    if (!hasExpectedLineElementShell(oldLine, lineClass))
+      return false
+    if ((oldLine.textContent ?? '').replace(/\r/g, '') !== expectedLines[i])
       return false
   }
 
@@ -530,7 +540,7 @@ export function updateCodeTokensIncremental(
     return renderFull()
 
   const oldLines = getCodeLineElements(codeEl, lineClass)
-  if (!hasExpectedCodeLineStructure(codeEl, oldLines, prevCode))
+  if (!hasExpectedCodeLineStructure(codeEl, oldLines, prevCode, lineClass))
     return renderFull()
 
   const tokenLines = providedTokenLines

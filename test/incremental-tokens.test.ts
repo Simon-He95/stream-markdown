@@ -638,6 +638,53 @@ describe('updateCodeTokensIncremental', () => {
     updater.dispose()
   })
 
+  it('repairs externally mutated line wrapper class on updater same-code calls', () => {
+    const updater = createSourceTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: 'line',
+    })
+
+    updater.update('same')
+
+    const line = container.querySelector('code > .line') as HTMLElement
+    line.className = 'line extra'
+
+    const result = updater.update('same')
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code > .line')?.getAttribute('class')).toBe('line')
+    expect(container.querySelector('code > .extra')).toBeNull()
+    expect(container.querySelector('code')?.textContent).toBe('same')
+
+    updater.dispose()
+  })
+
+  it('repairs externally replaced line wrapper tag on updater same-code calls', () => {
+    const updater = createSourceTokenIncrementalUpdater(container, hl as any, {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: 'line',
+    })
+
+    updater.update('same')
+
+    const oldLine = container.querySelector('code > .line') as HTMLElement
+    const replacement = document.createElement('div')
+    replacement.className = 'line'
+    replacement.innerHTML = oldLine.innerHTML
+    oldLine.replaceWith(replacement)
+
+    const result = updater.update('same')
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code > div.line')).toBeNull()
+    expect(container.querySelector('code > span.line')).not.toBeNull()
+    expect(container.querySelector('code')?.textContent).toBe('same')
+
+    updater.dispose()
+  })
+
   it('supports an empty lineClass without duplicating stale lines', () => {
     updateCodeTokensIncremental(container, hl as any, 'a', {
       lang: 'ts',
@@ -654,6 +701,30 @@ describe('updateCodeTokensIncremental', () => {
     expect(result).toBe('incremental')
     expect(container.querySelector('code')?.textContent).toBe('ab')
     expect(container.querySelectorAll('code > span')).toHaveLength(1)
+  })
+
+  it('repairs externally replaced line wrapper when lineClass is empty', () => {
+    updateSourceCodeTokensIncremental(container, hl as any, 'same', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: '',
+    })
+
+    const oldLine = container.querySelector('code > span') as HTMLElement
+    const replacement = document.createElement('div')
+    replacement.innerHTML = oldLine.innerHTML
+    oldLine.replaceWith(replacement)
+
+    const result = updateSourceCodeTokensIncremental(container, hl as any, 'same', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+      lineClass: '',
+    })
+
+    expect(result).toBe('full')
+    expect(container.querySelector('code > div')).toBeNull()
+    expect(container.querySelector('code > span')).not.toBeNull()
+    expect(container.querySelector('code')?.textContent).toBe('same')
   })
 
   it('only treats direct code children as rendered lines', () => {
