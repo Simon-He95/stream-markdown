@@ -227,6 +227,106 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     updater.dispose()
   })
 
+  it('uses IntersectionObserver installed after module import', async () => {
+    vi.resetModules()
+
+    const origGlobalIO = (globalThis as any).IntersectionObserver
+    const origWindowIO = (window as any).IntersectionObserver
+    const origGlobalRIC = (globalThis as any).requestIdleCallback
+    const origWindowRIC = (window as any).requestIdleCallback
+
+    delete (globalThis as any).IntersectionObserver
+    delete (window as any).IntersectionObserver
+
+    try {
+      const { createScheduledTokenIncrementalUpdater } = await import('../packages/stream-markdown/src/utils/incremental-tokens.js')
+
+      const idleCallbacks: IdleRequestCallback[] = []
+      const observeSpy = vi.fn()
+      const unobserveSpy = vi.fn()
+
+      class MockIntersectionObserver {
+        private cb: IntersectionObserverCallback
+
+        constructor(cb: IntersectionObserverCallback) {
+          this.cb = cb
+        }
+
+        observe(el: Element) {
+          observeSpy(el)
+          this.cb([{ target: el, isIntersecting: true } as IntersectionObserverEntry], this as any)
+        }
+
+        unobserve(el: Element) {
+          unobserveSpy(el)
+        }
+
+        disconnect() {}
+        takeRecords() {
+          return []
+        }
+
+        root = null
+        rootMargin = '0px'
+        thresholds = [0]
+      }
+
+      ;(globalThis as any).IntersectionObserver = MockIntersectionObserver
+      ;(window as any).IntersectionObserver = MockIntersectionObserver
+      ;(globalThis as any).requestIdleCallback = (cb: IdleRequestCallback) => {
+        idleCallbacks.push(cb)
+        return idleCallbacks.length
+      }
+      ;(window as any).requestIdleCallback = (globalThis as any).requestIdleCallback
+
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+
+      const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: 0,
+      })
+
+      updater.update('after-polyfill')
+
+      expect(observeSpy).toHaveBeenCalledWith(container)
+
+      idleCallbacks.shift()?.({
+        didTimeout: true,
+        timeRemaining: () => 999,
+      } as IdleDeadline)
+
+      expect(container.querySelector('code')?.textContent).toBe('after-polyfill')
+
+      updater.dispose()
+      expect(unobserveSpy).toHaveBeenCalledWith(container)
+    }
+    finally {
+      if (origGlobalIO === undefined)
+        delete (globalThis as any).IntersectionObserver
+      else
+        (globalThis as any).IntersectionObserver = origGlobalIO
+
+      if (origWindowIO === undefined)
+        delete (window as any).IntersectionObserver
+      else
+        (window as any).IntersectionObserver = origWindowIO
+
+      if (origGlobalRIC === undefined)
+        delete (globalThis as any).requestIdleCallback
+      else
+        (globalThis as any).requestIdleCallback = origGlobalRIC
+
+      if (origWindowRIC === undefined)
+        delete (window as any).requestIdleCallback
+      else
+        (window as any).requestIdleCallback = origWindowRIC
+
+      vi.resetModules()
+    }
+  })
+
   it('uses the fallback idle budget when timeRemaining is not finite', async () => {
     for (const timeRemaining of [Number.NaN, Infinity]) {
       const idleCallbacks: IdleRequestCallback[] = []

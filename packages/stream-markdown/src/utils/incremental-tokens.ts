@@ -900,7 +900,11 @@ interface ScheduledTask {
 
 type IdleHandle = number | ReturnType<typeof setTimeout>
 
-function getIntersectionObserverConstructor(): typeof IntersectionObserver | null {
+function getIntersectionObserverConstructor(container?: HTMLElement): typeof IntersectionObserver | null {
+  const ownerWindow = container?.ownerDocument?.defaultView as any
+  if (typeof ownerWindow?.IntersectionObserver === 'function')
+    return ownerWindow.IntersectionObserver
+
   const win = typeof window !== 'undefined' ? (window as any) : null
   if (typeof win?.IntersectionObserver === 'function')
     return win.IntersectionObserver
@@ -922,9 +926,12 @@ class TokenUpdateScheduler {
   private idleToken = 0
   private nextId = 1
 
-  constructor() {
+  private ensureIntersectionObserver(container: HTMLElement) {
+    if (this.io)
+      return
+
     try {
-      const IntersectionObserverCtor = getIntersectionObserverConstructor()
+      const IntersectionObserverCtor = getIntersectionObserverConstructor(container)
       if (IntersectionObserverCtor) {
         this.io = new IntersectionObserverCtor((entries) => {
           for (const e of entries)
@@ -973,6 +980,7 @@ class TokenUpdateScheduler {
     }
     this.queue.push(task)
     this.byContainer.set(container, task)
+    this.ensureIntersectionObserver(container)
     if (this.io) {
       try {
         this.io.observe(container)
