@@ -98,6 +98,37 @@ async function callHighlighterMutation(
   await mutation.apply(instance, args)
 }
 
+function markLoadedAfterHighlighterMutation(
+  instance: Highlighter,
+  name: HighlighterMutationName,
+  args: any[],
+): void {
+  // A stale/disposed highlighter may still finish an async mutation. Do not let
+  // it poison the loaded-state bookkeeping for the active global highlighter.
+  if (highlighter !== instance)
+    return
+
+  if (name === 'loadLanguage') {
+    for (const lang of args) {
+      if (typeof lang === 'string')
+        loadedLangs.add(lang)
+    }
+    return
+  }
+
+  for (const theme of args)
+    markThemeLoaded(theme as HighlightTheme)
+}
+
+function completeHighlighterMutation(
+  instance: Highlighter,
+  name: HighlighterMutationName,
+  args: any[],
+): void {
+  markLoadedAfterHighlighterMutation(instance, name, args)
+  invalidateHighlighterCaches(instance)
+}
+
 function wrapHighlighterMutationMethods(instance: Highlighter): void {
   if (wrappedHighlighterMutations.has(instance))
     return
@@ -116,12 +147,12 @@ function wrapHighlighterMutationMethods(instance: Highlighter): void {
 
       if (result && typeof result.then === 'function') {
         return result.then((value: unknown) => {
-          invalidateHighlighterCaches(instance)
+          completeHighlighterMutation(instance, name, args)
           return value
         })
       }
 
-      invalidateHighlighterCaches(instance)
+      completeHighlighterMutation(instance, name, args)
       return result
     }
   }
