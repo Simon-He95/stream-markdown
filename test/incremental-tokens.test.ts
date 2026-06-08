@@ -472,6 +472,8 @@ describe('updateCodeTokensIncremental', () => {
   it('keeps sanitized CSS custom-property colors', () => {
     expect(normalizeCssColor('var(--smd-token-color, #ff0000)'))
       .toBe('var(--smd-token-color, #ff0000)')
+    expect(normalizeCssColor('var(--smd-token-color, red !important)'))
+      .toBe('')
     expect(normalizeCssColor('var(--smd-token-color, url(https://x.test/a))'))
       .toBe('')
   })

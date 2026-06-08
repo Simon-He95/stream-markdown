@@ -278,8 +278,21 @@ export function createShikiStreamCachedRenderer(
     return tokenBuffer.some(token => token.content.replace(/\r/g, '').length > 0)
   }
 
+  const normalizeCodeText = (value: string) => value.replace(/\r/g, '')
+
+  const getBufferedCodeText = () => {
+    let text = ''
+    for (const token of tokenBuffer)
+      text += token.content
+    return text
+  }
+
+  const bufferedTokensMatchCode = (code: string) => {
+    return normalizeCodeText(getBufferedCodeText()) === normalizeCodeText(code)
+  }
+
   const scheduleBufferedRender = (code: string) => {
-    if (code.length > 0 && !hasBufferedCodeContent()) {
+    if (code.length > 0 && (!hasBufferedCodeContent() || !bufferedTokensMatchCode(code))) {
       tokenBuffer = []
       scheduleRender(code)
       return
@@ -329,7 +342,7 @@ export function createShikiStreamCachedRenderer(
 
     const canAppend = !langChanged
       && options.useGrammarState !== false
-      && hasBufferedCodeContent()
+      && bufferedTokensMatchCode(prevCode)
       && !!prevCode
       && code.startsWith(prevCode)
     if (!canAppend) {

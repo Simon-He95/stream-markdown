@@ -57,7 +57,7 @@ function hasUnsafeCssValueChar(value: string): boolean {
     const code = value.charCodeAt(i)
     if (code <= 31 || code === 127)
       return true
-    if (`;"'{}<>\\`.includes(value[i]))
+    if (`!;"'{}<>\\`.includes(value[i]))
       return true
   }
   return false
