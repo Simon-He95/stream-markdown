@@ -23,6 +23,10 @@ let shikiStreamTokenizerConstructorPromise: Promise<ShikiStreamTokenizerConstruc
 function loadShikiStreamTokenizerConstructor(): Promise<ShikiStreamTokenizerConstructor> {
   shikiStreamTokenizerConstructorPromise ??= import('shiki-stream')
     .then(mod => mod.ShikiStreamTokenizer)
+    .catch((error) => {
+      shikiStreamTokenizerConstructorPromise = null
+      throw error
+    })
   return shikiStreamTokenizerConstructorPromise
 }
 
@@ -115,6 +119,8 @@ export function createShikiStreamCachedRenderer(
   let tokenBuffer: ThemedToken[] = []
   let tokenBufferRevision = -1
   let tokenizerRevision = -1
+  let tokenizerLang: string | undefined
+  let tokenizerTheme: string | undefined
   let updater: TokenIncrementalUpdater | null = null
   const useRaf = options.scheduleInRaf ?? true
   let scheduled = false
@@ -187,23 +193,36 @@ export function createShikiStreamCachedRenderer(
       return
 
     const revision = getCurrentHighlighterRevision()
-    if (tokenizer && tokenizerRevision === revision)
+    const lang = currentLang ?? 'plaintext'
+    const theme = currentTheme
+    if (
+      tokenizer
+      && tokenizerRevision === revision
+      && tokenizerLang === lang
+      && tokenizerTheme === theme
+    ) {
       return
+    }
 
     tokenizer?.clear()
     tokenizer = null
     tokenizerRevision = -1
+    tokenizerLang = undefined
+    tokenizerTheme = undefined
 
     const Tokenizer = await loadShikiStreamTokenizerConstructor()
     if (disposed || !highlighter)
       return
 
+    const activeRevision = getCurrentHighlighterRevision()
     tokenizer = new Tokenizer({
       highlighter,
-      lang: currentLang ?? 'plaintext',
-      theme: currentTheme,
+      lang,
+      theme,
     })
-    tokenizerRevision = getCurrentHighlighterRevision()
+    tokenizerRevision = activeRevision
+    tokenizerLang = lang
+    tokenizerTheme = theme
   }
 
   const enqueue = <T>(task: () => Promise<T>) => {
@@ -221,6 +240,8 @@ export function createShikiStreamCachedRenderer(
     tokenizer?.clear()
     tokenizer = null
     tokenizerRevision = -1
+    tokenizerLang = undefined
+    tokenizerTheme = undefined
   }
 
   const isStaleTokenizerResult = (
