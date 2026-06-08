@@ -1319,12 +1319,15 @@ export function createScheduledTokenIncrementalUpdater(
 
   const scheduleFlush = () => {
     const throttleMs = normalizeDelayMs(opts.throttleMs)
+    if (timer !== null) {
+      clearTimeout(timer)
+      timer = null
+    }
     if (throttleMs <= 0) {
       flush()
       return
     }
-    if (timer === null)
-      timer = setTimeout(flush, throttleMs)
+    timer = setTimeout(flush, throttleMs)
   }
 
   return {

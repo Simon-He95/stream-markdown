@@ -229,14 +229,14 @@ describe('registerHighlight', () => {
     }
   })
 
-  it('does not repopulate the disposed singleton from an in-flight highlighter creation', async () => {
+  it('does not return a highlighter created before dispose', async () => {
     vi.resetModules()
 
     let resolveCreate!: (value: any) => void
     const created = new Promise<any>((resolve) => {
       resolveCreate = resolve
     })
-    const firstHighlighter = { id: 'first' }
+    const firstHighlighter = { id: 'first', dispose: vi.fn() }
     const secondHighlighter = { id: 'second' }
     const createHighlighter = vi.fn()
       .mockImplementationOnce(() => created)
@@ -258,10 +258,8 @@ describe('registerHighlight', () => {
       disposeHighlighter()
       resolveCreate(firstHighlighter)
 
-      await expect(first).resolves.toBe(firstHighlighter)
-      await expect(registerHighlight({ langs: ['ts'], themes: ['vitesse-light'] as any }))
-        .resolves
-        .toBe(secondHighlighter)
+      await expect(first).resolves.toBe(secondHighlighter)
+      expect(firstHighlighter.dispose).toHaveBeenCalled()
       expect(createHighlighter).toHaveBeenCalledTimes(2)
 
       disposeHighlighter()

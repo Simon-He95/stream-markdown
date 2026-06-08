@@ -470,24 +470,95 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
   })
 
   it('coalesces updates during the throttle window', async () => {
-    const container = document.createElement('div')
-    document.body.appendChild(container)
+    const origGlobalRIC = (globalThis as any).requestIdleCallback
+    const origWindowRIC = (window as any).requestIdleCallback
+    const idleCallbacks: IdleRequestCallback[] = []
+    let updater: ReturnType<typeof createScheduledTokenIncrementalUpdater> | null = null
 
-    const updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
-      lang: 'ts',
-      theme: 'vitesse-dark',
-      throttleMs: 10,
-    })
+    vi.useFakeTimers()
 
-    updater.update('first')
-    updater.update('final')
+    try {
+      ;(globalThis as any).requestIdleCallback = (cb: IdleRequestCallback) => {
+        idleCallbacks.push(cb)
+        return idleCallbacks.length
+      }
+      ;(window as any).requestIdleCallback = (globalThis as any).requestIdleCallback
 
-    await new Promise(r => setTimeout(r, 5))
-    expect(container.querySelector('code')).toBeNull()
+      const container = document.createElement('div')
+      document.body.appendChild(container)
 
-    await new Promise(r => setTimeout(r, 15))
+      updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: 10,
+      })
 
-    expect(container.querySelector('code')?.textContent).toBe('final')
+      updater.update('first')
+      updater.update('final')
+
+      await vi.advanceTimersByTimeAsync(5)
+      expect(idleCallbacks).toHaveLength(0)
+      expect(container.querySelector('code')).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(5)
+      expect(idleCallbacks).toHaveLength(1)
+
+      idleCallbacks.shift()?.({ didTimeout: true, timeRemaining: () => 999 } as IdleDeadline)
+      expect(container.querySelector('code')?.textContent).toBe('final')
+    }
+    finally {
+      updater?.dispose()
+      vi.useRealTimers()
+      ;(globalThis as any).requestIdleCallback = origGlobalRIC
+      ;(window as any).requestIdleCallback = origWindowRIC
+    }
+  })
+
+  it('resets the throttle window from the latest update', async () => {
+    const origGlobalRIC = (globalThis as any).requestIdleCallback
+    const origWindowRIC = (window as any).requestIdleCallback
+    const idleCallbacks: IdleRequestCallback[] = []
+    let updater: ReturnType<typeof createScheduledTokenIncrementalUpdater> | null = null
+
+    vi.useFakeTimers()
+
+    try {
+      ;(globalThis as any).requestIdleCallback = (cb: IdleRequestCallback) => {
+        idleCallbacks.push(cb)
+        return idleCallbacks.length
+      }
+      ;(window as any).requestIdleCallback = (globalThis as any).requestIdleCallback
+
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+
+      updater = createScheduledTokenIncrementalUpdater(container, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: 10,
+      })
+
+      updater.update('first')
+      await vi.advanceTimersByTimeAsync(8)
+
+      updater.update('final')
+      await vi.advanceTimersByTimeAsync(2)
+
+      expect(idleCallbacks).toHaveLength(0)
+      expect(container.querySelector('code')).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(8)
+      expect(idleCallbacks).toHaveLength(1)
+
+      idleCallbacks.shift()?.({ didTimeout: true, timeRemaining: () => 999 } as IdleDeadline)
+      expect(container.querySelector('code')?.textContent).toBe('final')
+    }
+    finally {
+      updater?.dispose()
+      vi.useRealTimers()
+      ;(globalThis as any).requestIdleCallback = origGlobalRIC
+      ;(window as any).requestIdleCallback = origWindowRIC
+    }
   })
 
   it('treats non-finite throttle values as unthrottled', async () => {

@@ -288,8 +288,10 @@ export async function registerHighlight(options: {
         themes: initialThemes,
         langs: initialLangs,
       })
-      if (creationGeneration !== highlighterGeneration)
+      if (creationGeneration !== highlighterGeneration) {
+        ;(h as any).dispose?.()
         return h
+      }
 
       markInitialLoaded(initialLangs, initialThemes)
       for (const lang of initialLangs)
@@ -310,7 +312,7 @@ export async function registerHighlight(options: {
 
   const h = await highlighterPromise
   if (requestGeneration !== highlighterGeneration)
-    return h
+    return registerHighlight(options)
 
   await applyPending(h, requestGeneration)
 
