@@ -594,6 +594,27 @@ describe('updateCodeTokensIncremental', () => {
     expect(lines[1].textContent).toBe('b')
   })
 
+  it('falls back to full render when tracked code childNodes contain external non-render nodes', () => {
+    updateSourceCodeTokensIncremental(container, hl as any, 'a\nb', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    const codeEl = container.querySelector('code')!
+    codeEl.insertBefore(document.createComment('external'), codeEl.childNodes[1] ?? null)
+    expect(codeEl.textContent).toBe('a\nb')
+
+    const result = updateSourceCodeTokensIncremental(container, hl as any, 'a\nbc', {
+      lang: 'ts',
+      theme: 'vitesse-dark',
+    })
+
+    expect(result).toBe('full')
+    const nextCodeEl = container.querySelector('code')!
+    expect(Array.from(nextCodeEl.childNodes).some(node => node.nodeType === 8)).toBe(false)
+    expect(nextCodeEl.textContent).toBe('a\nbc')
+  })
+
   it('repairs externally mutated pre/code shell on updater same-code calls', () => {
     const updater = createSourceTokenIncrementalUpdater(container, hl as any, {
       lang: 'ts',

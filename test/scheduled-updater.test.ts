@@ -227,6 +227,50 @@ describe('createScheduledTokenIncrementalUpdater (scheduler)', () => {
     updater.dispose()
   })
 
+  it('uses the fallback idle budget when timeRemaining is not finite', async () => {
+    for (const timeRemaining of [Number.NaN, Infinity]) {
+      const idleCallbacks: IdleRequestCallback[] = []
+      const ricImpl = (cb: IdleRequestCallback) => {
+        idleCallbacks.push(cb)
+        return idleCallbacks.length
+      }
+      globalThis.requestIdleCallback = ricImpl
+      window.requestIdleCallback = ricImpl
+
+      const firstContainer = document.createElement('div')
+      const secondContainer = document.createElement('div')
+      document.body.append(firstContainer, secondContainer)
+      const code = 'x'.repeat(1800)
+
+      const first = createScheduledTokenIncrementalUpdater(firstContainer, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: 0,
+      })
+      const second = createScheduledTokenIncrementalUpdater(secondContainer, hl as any, {
+        lang: 'ts',
+        theme: 'vitesse-dark',
+        throttleMs: 0,
+      })
+
+      first.update(code)
+      second.update(code)
+
+      expect(idleCallbacks).toHaveLength(1)
+      idleCallbacks.shift()?.({ timeRemaining: () => timeRemaining, didTimeout: true } as IdleDeadline)
+
+      expect(firstContainer.querySelector('code')?.textContent).toBe(code)
+      expect(secondContainer.querySelector('code')).toBeNull()
+
+      expect(idleCallbacks).toHaveLength(1)
+      idleCallbacks.shift()?.({ timeRemaining: () => 999, didTimeout: true } as IdleDeadline)
+      expect(secondContainer.querySelector('code')?.textContent).toBe(code)
+
+      first.dispose()
+      second.dispose()
+    }
+  })
+
   it('falls back when requestIdleCallback throws while scheduling', async () => {
     const throwingRic = () => {
       throw new Error('closed frame')

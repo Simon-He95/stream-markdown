@@ -63,6 +63,14 @@ function normalizeDelayMs(value: unknown): number {
   return value
 }
 
+function getIdleTimeRemaining(deadline: any, fallback = 50): number {
+  if (typeof deadline?.timeRemaining !== 'function')
+    return fallback
+
+  const value = deadline.timeRemaining()
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
 function escapeHtml(str: string): string {
   return str.replace(/\r/g, '')
     .replace(/&/g, '&amp;')
@@ -239,6 +247,31 @@ function hasExpectedLineElementShell(line: HTMLElement, lineClass: string): bool
     && getClassAttribute(line) === lineClass
 }
 
+function hasExpectedCodeLineChildNodes(
+  codeEl: HTMLElement,
+  oldLines: HTMLElement[],
+): boolean {
+  if (oldLines.length === 0)
+    return codeEl.childNodes.length === 0
+
+  if (codeEl.childNodes.length !== oldLines.length * 2 - 1)
+    return false
+
+  for (let i = 0; i < oldLines.length; i++) {
+    const lineNodeIndex = i * 2
+    if (codeEl.childNodes[lineNodeIndex] !== oldLines[i])
+      return false
+
+    if (i < oldLines.length - 1) {
+      const separator = codeEl.childNodes[lineNodeIndex + 1]
+      if (!separator || separator.nodeType !== 3 || separator.textContent !== '\n')
+        return false
+    }
+  }
+
+  return true
+}
+
 function hasExpectedCodeLineStructure(
   codeEl: HTMLElement,
   oldLines: HTMLElement[],
@@ -252,6 +285,8 @@ function hasExpectedCodeLineStructure(
   if (oldLines.length !== codeEl.children.length)
     return false
   if (oldLines.length !== expectedLines.length)
+    return false
+  if (!hasExpectedCodeLineChildNodes(codeEl, oldLines))
     return false
 
   for (let i = 0; i < oldLines.length; i++) {
@@ -1058,7 +1093,7 @@ class TokenUpdateScheduler {
     // avoid creating a long main-thread task when many containers are queued.
     // The allowed tasks scale with deadline.timeRemaining() to be responsive on
     // busy frames. We clamp between 1 and 8 tasks per tick.
-    const timeRem = typeof deadline?.timeRemaining === 'function' ? deadline.timeRemaining() : 50
+    const timeRem = getIdleTimeRemaining(deadline)
     // Budget nodes per tick based on time remaining. Heuristic: ~6 nodes/ms.
     const allowedNodes = Math.min(2000, Math.max(100, Math.floor(timeRem * 6)))
     let nodesProcessed = 0
@@ -1154,7 +1189,7 @@ class TokenUpdateScheduler {
         this.stopObserving(task.container)
 
       // stop processing if time is low to keep UI responsive
-      if (typeof deadline?.timeRemaining === 'function' && deadline.timeRemaining() < 6) {
+      if (getIdleTimeRemaining(deadline) < 6) {
         break
       }
     }
