@@ -112,6 +112,25 @@ function expectedPreStyle(backgroundColor: string): string {
   return backgroundColor ? `background-color: ${backgroundColor};` : ''
 }
 
+function normalizeInlineStyle(ownerDocument: Document, styleText: string): string {
+  if (!styleText)
+    return ''
+
+  const el = ownerDocument.createElement('pre')
+  el.setAttribute('style', styleText)
+  return el.style.cssText.trim()
+}
+
+function hasExpectedPreStyle(preEl: HTMLElement, backgroundColor: string): boolean {
+  const actual = preEl.getAttribute('style') ?? ''
+  const expected = expectedPreStyle(backgroundColor)
+
+  if (actual === expected)
+    return true
+
+  return normalizeInlineStyle(preEl.ownerDocument, actual) === normalizeInlineStyle(preEl.ownerDocument, expected)
+}
+
 function hasExpectedRenderedShell(
   container: HTMLElement,
   codeEl: HTMLElement,
@@ -130,7 +149,7 @@ function hasExpectedRenderedShell(
     && container.firstChild === preEl
     && getClassAttribute(preEl) === options.preClass
     && getClassAttribute(codeEl) === options.codeClass
-    && (preEl.getAttribute('style') ?? '') === expectedPreStyle(options.backgroundColor)
+    && hasExpectedPreStyle(preEl, options.backgroundColor)
 }
 
 function clearContainerRenderState(container: HTMLElement): void {

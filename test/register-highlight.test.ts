@@ -285,4 +285,65 @@ describe('registerHighlight', () => {
       vi.resetModules()
     }
   })
+
+  it('does not return a disposed highlighter when disposal happens during a pending load', async () => {
+    vi.resetModules()
+
+    let resolveSlowLoadStarted!: () => void
+    let resolveSlowLoad!: () => void
+
+    const slowLoadStarted = new Promise<void>((resolve) => {
+      resolveSlowLoadStarted = resolve
+    })
+    const slowLoad = new Promise<void>((resolve) => {
+      resolveSlowLoad = resolve
+    })
+
+    const firstHighlighter = {
+      loadLanguage: vi.fn(async (lang: string) => {
+        if (lang === 'slow-lang') {
+          resolveSlowLoadStarted()
+          await slowLoad
+        }
+      }),
+      loadTheme: vi.fn(async () => {}),
+    }
+    const secondHighlighter = {
+      loadLanguage: vi.fn(async () => {}),
+      loadTheme: vi.fn(async () => {}),
+    }
+
+    const createHighlighter = vi.fn()
+      .mockImplementationOnce(async () => firstHighlighter)
+      .mockImplementationOnce(async () => secondHighlighter)
+
+    vi.doMock('shiki', () => ({
+      createHighlighter,
+    }))
+
+    try {
+      const { disposeHighlighter, registerHighlight } = await import('../packages/stream-markdown/src/utils/highlight.js')
+
+      await registerHighlight({ langs: ['ts'], themes: ['vitesse-dark'] as any })
+
+      const inFlight = registerHighlight({
+        langs: ['slow-lang'],
+        themes: ['vitesse-dark'] as any,
+      })
+
+      await slowLoadStarted
+      disposeHighlighter()
+      resolveSlowLoad()
+
+      await expect(inFlight).resolves.toBe(secondHighlighter)
+      expect(createHighlighter).toHaveBeenCalledTimes(2)
+      expect(createHighlighter.mock.calls[1][0].langs).toContain('slow-lang')
+
+      disposeHighlighter()
+    }
+    finally {
+      vi.doUnmock('shiki')
+      vi.resetModules()
+    }
+  })
 })

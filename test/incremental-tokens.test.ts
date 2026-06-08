@@ -638,6 +638,25 @@ describe('updateCodeTokensIncremental', () => {
     updater.dispose()
   })
 
+  it('keeps incremental updates when the browser normalizes the pre background style', () => {
+    updateSourceCodeTokensIncremental(container, themedHl as any, 'a', {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    const pre = container.querySelector('pre') as HTMLElement
+    pre.style.backgroundColor = '#000000'
+    expect(pre.getAttribute('style')).toBe('background-color: rgb(0, 0, 0);')
+
+    const result = updateSourceCodeTokensIncremental(container, themedHl as any, 'ab', {
+      lang: 'ts',
+      theme: 'dark',
+    })
+
+    expect(result).toBe('incremental')
+    expect(container.querySelector('code')?.textContent).toBe('ab')
+  })
+
   it('repairs externally mutated line wrapper class on updater same-code calls', () => {
     const updater = createSourceTokenIncrementalUpdater(container, hl as any, {
       lang: 'ts',

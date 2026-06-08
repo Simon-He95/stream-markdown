@@ -286,6 +286,10 @@ export async function registerHighlight(options: {
   if (highlighter) {
     const activeHighlighter = highlighter
     await applyPending(activeHighlighter, requestGeneration)
+
+    if (requestGeneration !== highlighterGeneration || highlighter !== activeHighlighter)
+      return registerHighlight(options)
+
     return activeHighlighter
   }
 
@@ -327,6 +331,10 @@ export async function registerHighlight(options: {
     return h
 
   await applyPending(h, requestGeneration)
+
+  if (requestGeneration !== highlighterGeneration || highlighter !== h)
+    return registerHighlight(options)
+
   return h
 }
 
